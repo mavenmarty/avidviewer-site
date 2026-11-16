@@ -58,7 +58,6 @@ ${body}
     <nav aria-label="Footer">
       <a href="/guide/">User guide</a>
       <a href="/setup/">Set up a TV</a>
-      <a href="/releases/">What's new</a>
       <a href="/support/">Support</a>
       <a href="/privacy/">Privacy</a>
       <a href="/terms/">Terms</a>
@@ -122,7 +121,7 @@ async function buildGuide() {
   const cut = src.search(/^## Release notes\s*$/m);
   if (cut < 0) throw new Error('USER_GUIDE.md has no "## Release notes" heading');
   let guide = src.slice(0, cut);
-  const releases = src.slice(cut).replace(/^## Release notes\s*$/m, '');
+  // Release notes aren't on the website for now (owner, Nov 15, 2026): the guide stops before them.
 
   // Drop the title line and maintainer comments; the page has its own header.
   guide = guide.replace(/^# .*\n/, '').replace(/<!--[\s\S]*?-->\n?/g, '');
@@ -130,7 +129,8 @@ async function buildGuide() {
   const version = intro && intro[1].match(/Avid Viewer ([\d.]+)/);
   guide = guide.replace(/^\s*This guide covers[^\n]*\n/, '').replace(/^\*\*Contents:\*\*[^\n]*\n/m, '');
   // Links to the release notes now live on their own page.
-  guide = guide.replace(/\]\(#release-notes\)/g, '](/releases/)');
+  // Links into the release notes become plain text.
+  guide = guide.replace(/\[([^\]]+)\]\(#release-notes\)/g, '$1');
 
   // Images: copy every images/... the guide uses.
   const imgs = [...new Set([...guide.matchAll(/\]\((images\/[^)\s]+)\)/g)].map((m) => m[1]))];
@@ -157,16 +157,6 @@ async function buildGuide() {
 </div></div>`,
   }));
 
-  const relToc = [];
-  const relHtml = makeMarked(relToc).parse(releases);
-  await writePage('releases', layout({
-    title: "What's new — Avid Viewer",
-    description: 'Release notes for every Avid Viewer version, newest first.',
-    nav: 'releases', path: '/releases/',
-    body: `<div class="wrap">
-<header class="page-head"><h1>What's new</h1><p>Every Avid Viewer release, newest first.</p></header>
-<div class="doc"><article class="prose">${relHtml}</article></div></div>`,
-  }));
   console.log(`guide: ${toc.length} headings, ${imgs.length} images${v ? `, version ${v}` : ''}`);
 }
 

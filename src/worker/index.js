@@ -105,6 +105,11 @@ export default {
       return Response.redirect(url.toString(), 301);
     }
 
+    // The What's new page was taken off the site (Nov 15, 2026): old links go to the user guide.
+    if (url.pathname === '/releases' || url.pathname.startsWith('/releases/')) {
+      return Response.redirect(new URL('/guide/', url).toString(), 302);
+    }
+
     if (url.pathname.startsWith('/api/')) {
       // Accounts (sign-in, Account page, passkeys): see auth.js.
       try {
