@@ -1,27 +1,27 @@
-<!-- {"title": "Link a TV — Avid Viewer", "description": "Link a TV to your Avid Viewer account with the code it shows.", "nav": "account"} -->
+<!-- {"title": "Link a device — Avid Viewer", "description": "Link a device to your Avid Viewer account with the code it shows.", "nav": "account"} -->
 <div class="wrap">
   <header class="page-head">
-    <h1>Link a TV</h1>
-    <p>On the TV, choose <strong>Sign in to your account</strong> on Avid Viewer's welcome screen, or open Settings › Account › <strong>Link this TV</strong>. Enter the code it shows, or scan its QR code.</p>
+    <h1>Link a device</h1>
+    <p>On the device, choose <strong>Sign in to your account</strong> on Avid Viewer's welcome screen, or open Settings › Account › <strong>Link this device</strong>. Enter the code it shows, or scan its QR code.</p>
   </header>
   <div class="setup">
     <form id="link-form" class="setup-card" novalidate hidden>
-      <label class="fld">Code on the TV
+      <label class="fld">Code on the device
         <input id="link-code" type="text" inputmode="text" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="12" placeholder="K7M2-QX9P" class="code-input">
       </label>
       <div id="link-found" hidden>
         <p class="soft" id="link-tv"></p>
-        <label class="fld">Name for this TV<input id="link-name" type="text" maxlength="60" placeholder="Living room"></label>
+        <label class="fld">Name for this device<input id="link-name" type="text" maxlength="60" placeholder="Living room"></label>
       </div>
-      <button class="btn btn-primary" type="submit" id="link-go">Find the TV</button>
+      <button class="btn btn-primary" type="submit" id="link-go">Find the device</button>
       <p id="link-msg" class="form-msg" role="status" aria-live="polite"></p>
       <p class="fineprint" id="link-who"></p>
     </form>
     <div id="link-done" class="setup-card result" hidden>
       <p class="k">Linked</p>
       <h2 id="link-done-name"></h2>
-      <p>The TV will show your account in a few seconds. You can rename or remove it on <a href="/account/">your account page</a>.</p>
-      <button type="button" class="btn btn-ghost" id="link-another">Link another TV</button>
+      <p>The device will show your account in a few seconds. You can rename or remove it on <a href="/account/">your account page</a>.</p>
+      <button type="button" class="btn btn-ghost" id="link-another">Link another device</button>
     </div>
   </div>
 </div>

@@ -31,3 +31,7 @@ custom_domain = true
 
 [observability]
 enabled = true
+
+# Daily cleanup: deletes backups of devices removed more than 30 days ago.
+[triggers]
+crons = ["17 9 * * *"]

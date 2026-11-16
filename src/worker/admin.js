@@ -124,7 +124,7 @@ async function revokeTv(request, env, admin) {
   const reason = needReason(b);
   if (!reason) return json({ error: 'Give a reason (it goes in the audit log).' }, 400);
   const d = await env.DB.prepare('SELECT id, user_id, name FROM devices WHERE id = ?1 AND revoked_at IS NULL').bind(String(b?.deviceId || '')).first();
-  if (!d) return json({ error: 'That TV is already signed out.' }, 404);
+  if (!d) return json({ error: 'That device is already signed out.' }, 404);
   await env.DB.prepare('UPDATE devices SET revoked_at = ?1 WHERE id = ?2').bind(Date.now(), d.id).run();
   await audit(env, admin, 'revoke_tv', await target(env, d.user_id), d.name, reason);
   return json({ ok: true });

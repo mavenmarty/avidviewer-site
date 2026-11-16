@@ -1,30 +1,18 @@
-<!-- {"title": "Set up a TV — Avid Viewer", "description": "Enter your playlist on your phone or computer and get a code to type on your TV. No typing logins with a remote.", "nav": "setup"} -->
+<!-- {"title": "Set up a device — Avid Viewer", "description": "Enter your playlist on your phone or computer and get a code to type on your device. No typing logins with a remote.", "nav": "setup"} -->
 <div class="wrap">
   <header class="page-head">
-    <h1>Set up a TV</h1>
-    <p>Enter your playlist here, get a short code, and type it on your TV in Avid Viewer: <strong>Enter a setup code</strong> on the welcome screen, or Settings › Playlists › Add playlist › <strong>Use a setup code</strong>.</p>
+    <h1>Set up a device</h1>
+    <p>Enter your playlist here, get a short code, and type it on your device in Avid Viewer: <strong>Enter a setup code</strong> on the welcome screen, or Settings › Playlists › Add playlist › <strong>Use a setup code</strong>.</p>
   </header>
 
   <div class="setup">
     <form id="setup-form" class="setup-card" novalidate>
-      <fieldset class="seg" aria-label="What to send to the TV">
-        <label><input type="radio" name="mode" value="playlists" checked> Add playlists</label>
-        <label><input type="radio" name="mode" value="backup"> Restore a backup</label>
-      </fieldset>
-
       <div id="mode-playlists">
         <div id="playlists"></div>
         <button type="button" class="btn btn-ghost" id="add-playlist">＋ Another playlist</button>
       </div>
 
-      <div id="mode-backup" hidden>
-        <label class="fld">Backup file (.avbak)
-          <input type="file" id="backup-file" accept=".avbak,application/json">
-        </label>
-        <p class="fineprint">A backup file from an older version of Avid Viewer (made in Settings › Updates &amp; about). It stays locked with its PIN: the TV asks for it. Restoring needs your Avid Viewer account: you'll be asked to sign in, and the TV is linked to your account at the same time.</p>
-      </div>
-
-      <label class="switch-row" id="link-opt" hidden><input type="checkbox" id="link-account" checked> <span>Also link the TV to my account (<span id="link-email"></span>)</span></label>
+      <label class="switch-row" id="link-opt" hidden><input type="checkbox" id="link-account" checked> <span>Also link the device to my account (<span id="link-email"></span>)</span></label>
 
       <label class="hp" for="website">Leave this empty</label>
       <input class="hp" id="website" name="website" type="text" tabindex="-1" autocomplete="off">
@@ -37,11 +25,11 @@
     <div id="setup-result" class="setup-card result" hidden>
       <p class="k">Your setup code</p>
       <p id="code" class="code" aria-live="polite"></p>
-      <p>Type it on your TV in Avid Viewer. It works until <span id="code-expires"></span> (30 minutes).</p>
+      <p>Type it on your device in Avid Viewer. It works until <span id="code-expires"></span> (30 minutes).</p>
       <ol>
         <li>Open Avid Viewer. On the welcome screen choose <strong>Enter a setup code</strong>. If you already have a playlist: Settings › Playlists › Add playlist › <strong>Use a setup code</strong>.</li>
         <li>Type the code with the remote and press Done.</li>
-        <li>The TV checks each playlist and adds it. A backup asks for its PIN.</li>
+        <li>The device checks each playlist and adds it.</li>
       </ol>
       <button type="button" class="btn btn-ghost" id="start-over">Make another code</button>
     </div>

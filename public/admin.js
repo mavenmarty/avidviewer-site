@@ -19,7 +19,7 @@
     if (!rows.length) { var e = el('tr'); var td = el('td', 'soft', 'Nothing yet.'); td.colSpan = head.length; e.appendChild(td); t.appendChild(e); }
     rows.forEach(function (r) { var row = el('tr'); r.cells.forEach(function (c) { row.appendChild(el('td', null, c)); }); if (r.onclick) { row.tabIndex = 0; row.addEventListener('click', r.onclick); row.addEventListener('keydown', function (e) { if (e.key === 'Enter') r.onclick(); }); } t.appendChild(row); });
   }
-  var ACTIONS = { suspend: 'Suspended', unsuspend: 'Lifted suspension', 'delete': 'Deleted account', revoke_tv: 'Signed out TV', resend_link: 'Sent sign-in link', end_sessions: 'Signed out browsers', note: 'Added note' };
+  var ACTIONS = { suspend: 'Suspended', unsuspend: 'Lifted suspension', 'delete': 'Deleted account', revoke_tv: 'Signed out device', resend_link: 'Sent sign-in link', end_sessions: 'Signed out browsers', note: 'Added note' };
 
   // ---------------------------------------------------------------- gate
   function start() {
@@ -56,8 +56,8 @@
   function loadStats() {
     get('/api/admin/stats').then(function (s) {
       var box = $('adm-stats'); box.innerHTML = '';
-      [['Accounts', s.users], ['New, 7 days', s.new7], ['New, 30 days', s.new30], ['Signed in, 7 days', s.active7], ['Linked TVs', s.tvs],
-       ['TVs seen, 7 days', s.tvs7], ['With a passkey', s.passkeys], ['Suspended', s.suspended], ['Setup codes, 24 h', s.setupCodes24h], ['Launch news', s.launchNews], ['Backups', s.backupCount], ['Backup storage', Math.round((s.backupBytes || 0) / 1024) + ' KB']]
+      [['Accounts', s.users], ['New, 7 days', s.new7], ['New, 30 days', s.new30], ['Signed in, 7 days', s.active7], ['Linked devices', s.tvs],
+       ['Devices seen, 7 days', s.tvs7], ['With a passkey', s.passkeys], ['Suspended', s.suspended], ['Setup codes, 24 h', s.setupCodes24h], ['Launch news', s.launchNews], ['Backups', s.backupCount], ['Backup storage', Math.round((s.backupBytes || 0) / 1024) + ' KB']]
         .forEach(function (k) { var c = el('div', 'adm-stat'); c.appendChild(el('span', 'n', String(k[1] || 0))); c.appendChild(el('span', 'l', k[0])); box.appendChild(c); });
       var bars = $('adm-daily'); bars.innerHTML = '';
       var byDay = {}; (s.daily || []).forEach(function (d) { byDay[d.day] = d.n; });
@@ -66,7 +66,7 @@
         var day = new Date(Date.now() - i * 864e5).toISOString().slice(0, 10), n = byDay[day] || 0;
         var b = el('div', 'bar'); b.style.height = Math.max(2, Math.round(100 * n / max)) + '%'; b.title = day + ': ' + n; bars.appendChild(b);
       }
-      table($('adm-versions'), ['App version', 'TVs'], (s.versions || []).map(function (v) { return { cells: [v.v, String(v.n)] }; }));
+      table($('adm-versions'), ['App version', 'Devices'], (s.versions || []).map(function (v) { return { cells: [v.v, String(v.n)] }; }));
     });
   }
 
@@ -75,7 +75,7 @@
   $('adm-status').addEventListener('change', loadUsers);
   function loadUsers() {
     get('/api/admin/users?q=' + encodeURIComponent($('adm-q').value) + '&status=' + $('adm-status').value).then(function (d) {
-      table($('adm-users'), ['Email', 'Joined', 'Last sign-in', 'TVs', 'Status'], (d.users || []).map(function (u) {
+      table($('adm-users'), ['Email', 'Joined', 'Last sign-in', 'Devices', 'Status'], (d.users || []).map(function (u) {
         return { cells: [u.email + (u.role === 'admin' ? ' (admin)' : ''), when(u.createdAt), when(u.lastSignIn), String(u.tvs), u.status], onclick: function () { loadUser(u.id); } };
       }));
     });
@@ -92,19 +92,19 @@
       var acts = el('div', 'btn-row');
       function act(label, cls, fn) { var b = el('button', 'btn ' + cls, label); b.type = 'button'; b.addEventListener('click', fn); acts.appendChild(b); }
       act('Send sign-in link', 'btn-ghost', function () { ask('Send a sign-in link?', 'Emails ' + u.email + ' a one-time sign-in link (15 minutes).', false, true, function (reason) { return post('/api/admin/resend-link', { userId: u.id, reason: reason }); }, id); });
-      act('Sign out all browsers', 'btn-ghost', function () { ask('Sign out every browser?', u.email + ' will need to sign in again on the website. Linked TVs stay linked.', false, false, function (reason) { return post('/api/admin/end-sessions', { userId: u.id, reason: reason }); }, id); });
-      if (u.status === 'suspended') act('Lift suspension', 'btn-ghost', function () { ask('Lift the suspension?', u.email + ' can sign in again; their TVs keep working.', false, false, function (reason) { return post('/api/admin/suspend', { userId: u.id, suspend: false, reason: reason }); }, id); });
-      else act('Suspend', 'btn-danger', function () { ask('Suspend this account?', u.email + " can't sign in, and is signed out of every browser. Linked TVs stay linked but can't use account features until the suspension is lifted.", false, false, function (reason) { return post('/api/admin/suspend', { userId: u.id, suspend: true, reason: reason }); }, id); });
-      act('Delete account', 'btn-danger', function () { ask('Delete this account?', 'Deletes ' + u.email + ' with its passkeys, browsers, linked TVs and notes. The audit log keeps a record. This cannot be undone.', true, false, function (reason, confirmText) { return post('/api/admin/delete', { userId: u.id, reason: reason, confirm: confirmText }); }, null); });
+      act('Sign out all browsers', 'btn-ghost', function () { ask('Sign out every browser?', u.email + ' will need to sign in again on the website. Linked devices stay linked.', false, false, function (reason) { return post('/api/admin/end-sessions', { userId: u.id, reason: reason }); }, id); });
+      if (u.status === 'suspended') act('Lift suspension', 'btn-ghost', function () { ask('Lift the suspension?', u.email + ' can sign in again; their devices keep working.', false, false, function (reason) { return post('/api/admin/suspend', { userId: u.id, suspend: false, reason: reason }); }, id); });
+      else act('Suspend', 'btn-danger', function () { ask('Suspend this account?', u.email + " can't sign in, and is signed out of every browser. Linked devices stay linked but can't use account features until the suspension is lifted.", false, false, function (reason) { return post('/api/admin/suspend', { userId: u.id, suspend: true, reason: reason }); }, id); });
+      act('Delete account', 'btn-danger', function () { ask('Delete this account?', 'Deletes ' + u.email + ' with its passkeys, browsers, linked devices and notes. The audit log keeps a record. This cannot be undone.', true, false, function (reason, confirmText) { return post('/api/admin/delete', { userId: u.id, reason: reason, confirm: confirmText }); }, null); });
       box.appendChild(acts);
 
-      box.appendChild(el('h3', null, 'TVs'));
+      box.appendChild(el('h3', null, 'Devices'));
       var tvs = el('ul', 'rows');
-      if (!d.devices.length) tvs.appendChild(el('li', 'soft', 'No TVs linked.'));
+      if (!d.devices.length) tvs.appendChild(el('li', 'soft', 'No devices linked.'));
       d.devices.forEach(function (t) {
         var li = el('li'); li.appendChild(el('span', null, t.name));
         li.appendChild(el('span', 'soft', [t.model, t.appVersion ? 'Avid Viewer ' + t.appVersion : '', 'linked ' + when(t.linkedAt), 'last seen ' + when(t.lastSeen), t.removedAt ? 'removed ' + when(t.removedAt) : ''].filter(Boolean).join(' · ')));
-        if (!t.removedAt) { var x = el('button', 'linkish', 'Sign out this TV'); x.type = 'button'; x.addEventListener('click', function () { ask('Sign out "' + t.name + '"?', 'The TV unlinks itself the next time it checks in. Its playlists stay on the TV.', false, false, function (reason) { return post('/api/admin/revoke-tv', { deviceId: t.id, reason: reason }); }, id); }); li.appendChild(x); }
+        if (!t.removedAt) { var x = el('button', 'linkish', 'Sign out this device'); x.type = 'button'; x.addEventListener('click', function () { ask('Sign out "' + t.name + '"?', 'The device unlinks itself the next time it checks in. Its playlists stay on the device.', false, false, function (reason) { return post('/api/admin/revoke-tv', { deviceId: t.id, reason: reason }); }, id); }); li.appendChild(x); }
         tvs.appendChild(li);
       });
       box.appendChild(tvs);
@@ -114,7 +114,7 @@
       if (!d.sessions.length) ss.appendChild(el('li', 'soft', 'None.'));
       d.sessions.forEach(function (s) { var li = el('li'); li.appendChild(el('span', null, s.label || 'A browser')); li.appendChild(el('span', 'soft', (s.method === 'passkey' ? 'passkey' : 'email link') + ' · signed in ' + when(s.createdAt) + ' · last active ' + when(s.lastSeen))); ss.appendChild(li); });
       box.appendChild(ss);
-      box.appendChild(el('p', 'soft', 'Backups: ' + (d.backups.length ? d.backups.map(function (x) { return x.name + (x.removed ? ' (removed TV)' : '') + ', ' + when(x.createdAt) + ', ' + Math.max(1, Math.round(x.size / 1024)) + ' KB'; }).join('; ') : 'none')));
+      box.appendChild(el('p', 'soft', 'Backups: ' + (d.backups.length ? d.backups.map(function (x) { return x.name + (x.removed ? ' (removed device)' : '') + ', ' + when(x.createdAt) + ', ' + Math.max(1, Math.round(x.size / 1024)) + ' KB'; }).join('; ') : 'none')));
       box.appendChild(el('p', 'soft', 'Passkeys: ' + (d.passkeys.length ? d.passkeys.map(function (p) { return p.name; }).join(', ') : 'none')));
 
       box.appendChild(el('h3', null, 'Notes'));

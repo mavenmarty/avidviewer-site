@@ -1,4 +1,4 @@
-// avidviewer.app/setup: turns playlists (or a backup file) into a one-time setup code for a TV.
+// avidviewer.app/setup: turns playlists into a one-time setup code for a TV.
 //
 // Everything is encrypted here, in the browser, with a key made from the code. The server gets only the
 // ciphertext and a fingerprint of the code, so it never sees a login, a playlist link or the code.
@@ -7,7 +7,7 @@
 //   id     hex SHA-256 of "avidviewer-setup-id:v1:" + code
 //   key    PBKDF2-HMAC-SHA256(code, "avidviewer-setup-key:v1", 100,000 rounds) → AES-256-GCM
 //   data   Base64(12-byte IV + ciphertext with its 16-byte tag)
-//   JSON   {"v":1,"playlists":[{type,name,server,username,password,m3u,epg}],"backup":"<.avbak text>","link":"<token>"}
+//   JSON   {"v":1,"playlists":[{type,name,server,username,password,m3u,epg}],"link":"<token>"}
 //          ("link", when signed in: a one-time token the TV trades for its own account link, /api/tv/link/claim)
 (function (root) {
   var ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
@@ -75,7 +75,6 @@
   function mode() { var m = 'playlists'; modeInputs.forEach(function (r) { if (r.checked) m = r.value; }); return m; }
   function showMode() {
     document.getElementById('mode-playlists').hidden = mode() !== 'playlists';
-    document.getElementById('mode-backup').hidden = mode() !== 'backup';
   }
   modeInputs.forEach(function (r) { r.addEventListener('change', showMode); });
   document.getElementById('add-playlist').addEventListener('click', addPlaylist);
@@ -96,16 +95,6 @@
   function fail(text) { msg.className = 'form-msg err'; msg.textContent = text; }
 
   async function collect() {
-    if (mode() === 'backup') {
-      var f = document.getElementById('backup-file').files[0];
-      if (!f) throw new Error('Choose your backup file (it ends in .avbak).');
-      if (f.size > 900000) throw new Error('That file is too big to be an Avid Viewer backup.');
-      var text = await f.text();
-      var ok = false;
-      try { ok = JSON.parse(text).avidViewerBackup === 1; } catch (e) { ok = false; }
-      if (!ok) throw new Error("That file isn't an Avid Viewer backup (they end in .avbak).");
-      return { v: 1, playlists: [], backup: text };
-    }
     var out = [];
     list.querySelectorAll('.pl').forEach(function (n) {
       var xt = n.querySelector('input[value="xtream"]').checked;
@@ -127,13 +116,8 @@
     var button = form.querySelector('button[type="submit"]');
     msg.className = 'form-msg'; msg.textContent = '';
     var payload;
-    if (mode() === 'backup' && !signedIn) {
-      fail('Restoring a backup needs your Avid Viewer account.');
-      var a = document.createElement('a'); a.href = '/signin/?next=' + encodeURIComponent('/setup/'); a.textContent = ' Sign in first'; msg.appendChild(a);
-      return;
-    }
     try { payload = await collect(); } catch (err) { fail(err.message); return; }
-    if (signedIn && (mode() === 'backup' || document.getElementById('link-account').checked)) {
+    if (signedIn && document.getElementById('link-account').checked) {
       var lt = await fetch('/api/link/setup-token', { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin', body: '{}' })
         .then(function (r) { return r.ok ? r.json() : {}; }).catch(function () { return {}; });
       if (lt.linkToken) payload.link = lt.linkToken;

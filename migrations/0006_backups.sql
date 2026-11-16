@@ -1,7 +1,8 @@
 -- Cloud backups (Nov 16, 2026). Each linked TV keeps exactly one backup: its most recent, replaced on every upload.
 -- The data is the TV's .avbak file, encrypted on the TV with the backup PIN chosen at the first backup.
 -- The PIN is kept too (pin_enc, AES-GCM with the BACKUP_PIN_KEY secret), so the person can look it up on their Account page.
--- A TV removed from the account keeps its last backup (so a replacement TV can restore it) until the person deletes it.
+-- A device removed from the account keeps its last backup for 30 days (so a replacement can restore it), then it's deleted
+-- by the daily cron in src/worker/index.js (or sooner, by the person).
 CREATE TABLE IF NOT EXISTS backups (
   device_id    TEXT PRIMARY KEY,
   user_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,

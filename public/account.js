@@ -73,22 +73,22 @@
     fetch('/api/me', { credentials: 'same-origin' }).then(function (r) {
       if (r.status === 401) { location.href = '/signin/?next=' + encodeURIComponent('/link/' + (pre ? '?c=' + pre : '')); return; }
       return r.json().then(function (me) {
-        document.getElementById('link-who').textContent = 'The TV will be linked to ' + me.email + '.';
+        document.getElementById('link-who').textContent = 'The device will be linked to ' + me.email + '.';
         lf.hidden = false;
         if (pre) { codeIn.value = pre.toUpperCase(); lookup(); } else codeIn.focus();
       });
     });
-    function reset() { found = null; document.getElementById('link-found').hidden = true; document.getElementById('link-go').textContent = 'Find the TV'; }
+    function reset() { found = null; document.getElementById('link-found').hidden = true; document.getElementById('link-go').textContent = 'Find the device'; }
     codeIn.addEventListener('input', reset);
     function lookup() {
-      say(lmsg, 'Looking for the TV…');
+      say(lmsg, 'Looking for the device…');
       post('/api/link/lookup', { code: codeIn.value }).then(function (d) {
         if (!d._ok) { say(lmsg, d.error || "That code wasn't found.", true); return; }
         found = d; say(lmsg, '');
-        document.getElementById('link-tv').textContent = 'Found: ' + ([d.model, d.appVersion ? 'Avid Viewer ' + d.appVersion : ''].filter(Boolean).join(' · ') || 'a TV');
+        document.getElementById('link-tv').textContent = 'Found: ' + ([d.model, d.appVersion ? 'Avid Viewer ' + d.appVersion : ''].filter(Boolean).join(' · ') || 'a device');
         document.getElementById('link-name').value = d.name || '';
         document.getElementById('link-found').hidden = false;
-        document.getElementById('link-go').textContent = 'Link this TV';
+        document.getElementById('link-go').textContent = 'Link this device';
       });
     }
     lf.addEventListener('submit', function (e) {
@@ -115,26 +115,26 @@
   function render() {
     document.getElementById('acct-email').textContent = 'Signed in as ' + me.email + (me.admin ? ' · administrator' : '');
     var tv = document.getElementById('devices'); tv.innerHTML = '';
-    if (!me.devices.length) tv.appendChild(el('li', 'soft', 'No TVs linked yet.'));
+    if (!me.devices.length) tv.appendChild(el('li', 'soft', 'No devices linked yet.'));
     me.devices.forEach(function (d) {
       var li = el('li'); li.appendChild(el('span', null, d.name));
       li.appendChild(el('span', 'soft', [d.model, d.appVersion ? 'Avid Viewer ' + d.appVersion : '', 'last seen ' + when(d.lastSeen)].filter(Boolean).join(' · ')));
       var rn = el('button', 'linkish', 'Rename'); rn.type = 'button';
       rn.addEventListener('click', function () {
-        var n = prompt('Name for this TV', d.name);
+        var n = prompt('Name for this device', d.name);
         if (n && n.trim()) post('/api/account/devices/rename', { id: d.id, name: n.trim() }).then(load);
       });
       var rm = el('button', 'linkish', 'Remove'); rm.type = 'button';
       rm.addEventListener('click', function () {
-        if (!confirm('Remove "' + d.name + '"? It will be signed out of your account the next time it checks in. Its playlists stay on the TV.')) return;
+        if (!confirm('Remove "' + d.name + '"? It will be signed out of your account the next time it checks in. Its playlists stay on the device, and its backup stays in your account for 30 days.')) return;
         post('/api/account/devices/remove', { id: d.id }).then(load);
       });
       li.appendChild(rn); li.appendChild(rm); tv.appendChild(li);
     });
     var bk = document.getElementById('backups'); bk.innerHTML = '';
-    if (!me.backups.length) bk.appendChild(el('li', 'soft', 'No backups yet. Turn them on in Avid Viewer › Settings › Updates & about on a linked TV.'));
+    if (!me.backups.length) bk.appendChild(el('li', 'soft', 'No backups yet. Turn them on in Avid Viewer › Settings › Updates & about on a linked device.'));
     me.backups.forEach(function (x) {
-      var li = el('li'); li.appendChild(el('span', null, x.name + (x.removed ? ' (removed TV)' : '')));
+      var li = el('li'); li.appendChild(el('span', null, x.name + (x.removed ? ' (removed device, deleted ' + when(x.deletesAt) + ')' : '')));
       li.appendChild(el('span', 'soft', ['backed up ' + when(x.createdAt), x.playlists != null ? x.playlists + ' playlist' + (x.playlists === 1 ? '' : 's') : '', Math.max(1, Math.round(x.size / 1024)) + ' KB'].filter(Boolean).join(' · ')));
       var pinOut = el('strong', 'pin-out');
       var show = el('button', 'linkish', 'Show PIN'); show.type = 'button';
@@ -151,7 +151,7 @@
       li.appendChild(show); li.appendChild(pinOut);
       var del = el('button', 'linkish', 'Delete'); del.type = 'button';
       del.addEventListener('click', function () {
-        if (!confirm('Delete the backup from "' + x.name + '"? It can\'t be undone. If that TV is still linked and backups are on, it makes a new one within a day.')) return;
+        if (!confirm('Delete the backup from "' + x.name + '"? It can\'t be undone. If that device is still linked and backups are on, it makes a new one within a day.')) return;
         post('/api/account/backups/delete', { deviceId: x.deviceId }).then(load);
       });
       li.appendChild(del); bk.appendChild(li);

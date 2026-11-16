@@ -44,9 +44,9 @@ async function newDevice(env, userId, info) {
   const id = randomToken(12);
   await env.DB.prepare(
     'INSERT INTO devices (id, user_id, token_hash, name, model, app_version, created_at, last_seen) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7)'
-  ).bind(id, userId, await sha256hex(token), info.name || info.model || 'TV', info.model || null, info.appVersion || null, now).run();
+  ).bind(id, userId, await sha256hex(token), info.name || info.model || 'Device', info.model || null, info.appVersion || null, now).run();
   const u = await env.DB.prepare('SELECT email FROM users WHERE id = ?1').bind(userId).first();
-  return { token, deviceId: id, name: info.name || info.model || 'TV', email: u?.email || '' };
+  return { token, deviceId: id, name: info.name || info.model || 'Device', email: u?.email || '' };
 }
 
 function tvInfo(b) {
@@ -115,15 +115,15 @@ async function tvClaim(request, env) {
   const now = Date.now();
   const row = await env.DB.prepare("SELECT id, user_id, expires_at, status FROM link_codes WHERE kind = 'setup' AND secret_hash = ?1")
     .bind(await sha256hex(token)).first();
-  if (!row || row.status !== 'approved' || row.expires_at < now) return json({ error: 'This setup code can no longer link a TV. Link it in Settings › Account instead.' }, 410);
+  if (!row || row.status !== 'approved' || row.expires_at < now) return json({ error: 'This setup code can no longer link a device. Link it in Settings › Account instead.' }, 410);
   const used = await env.DB.prepare("UPDATE link_codes SET status = 'used' WHERE id = ?1 AND status = 'approved'").bind(row.id).run();
-  if (!used.meta?.changes) return json({ error: 'This setup code already linked a TV.' }, 410);
+  if (!used.meta?.changes) return json({ error: 'This setup code already linked a device.' }, 410);
   return json({ status: 'approved', ...(await newDevice(env, row.user_id, tvInfo(b))) });
 }
 
 async function tvMe(request, env) {
   const d = await deviceFor(request, env);
-  if (!d) return json({ error: 'This TV is not linked.' }, 401);
+  if (!d) return json({ error: 'This device is not linked.' }, 401);
   // A suspended account's TVs stay linked (403 changes nothing on the TV), so lifting the suspension restores them.
   if (d.status !== 'active') return json({ error: 'This account is suspended.' }, 403);
   const version = clip(request.headers.get('x-app-version') || '', 30);
@@ -158,7 +158,7 @@ async function openPin(env, sealed) {
 /** POST /api/tv/backup {data}: this TV's backup, replacing its previous one. */
 async function tvBackupUpload(request, env) {
   const d = await deviceFor(request, env);
-  if (!d) return json({ error: 'This TV is not linked.' }, 401);
+  if (!d) return json({ error: 'This device is not linked.' }, 401);
   if (d.status !== 'active') return json({ error: 'This account is suspended.' }, 403);
   const b = await body(request);
   const data = typeof b?.data === 'string' ? b.data : '';
@@ -177,27 +177,42 @@ async function tvBackupUpload(request, env) {
      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
      ON CONFLICT(device_id) DO UPDATE SET user_id = ?2, device_name = ?3, device_model = ?4, app_version = ?5, created_at = ?6,
        uploaded_at = ?7, size = ?8, playlists = ?9, data = ?10, pin_enc = ?11`
-  ).bind(d.id, d.user_id, dev?.name || 'TV', dev?.model || null, clip(head.appVersion, 30) || dev?.app_version || null,
+  ).bind(d.id, d.user_id, dev?.name || 'Device', dev?.model || null, clip(head.appVersion, 30) || dev?.app_version || null,
     Number(head.created) || now, now, data.length, Array.isArray(head.playlistNames) ? head.playlistNames.length : null, data, pinEnc).run();
   return json({ ok: true, uploadedAt: now });
 }
 
+/** A removed device's backup stays this long (from when the device was removed), then it's deleted. */
+export const REMOVED_BACKUP_DAYS = 30;
+const KEEP_MS = REMOVED_BACKUP_DAYS * 24 * 60 * 60 * 1000;
+
+/** Deletes backups of devices removed more than 30 days ago (daily cron, and before listing). */
+export async function expireBackups(env, userId = null) {
+  const cutoff = Date.now() - KEEP_MS;
+  await env.DB.prepare(
+    `DELETE FROM backups WHERE device_id IN (SELECT id FROM devices WHERE revoked_at IS NOT NULL AND revoked_at < ?1)
+       ${userId ? 'AND user_id = ?2' : ''}`
+  ).bind(...(userId ? [cutoff, userId] : [cutoff])).run();
+}
+
 /** The account's backups, newest first (no data). */
 export async function backupsFor(env, userId, thisDevice = null) {
+  await expireBackups(env, userId);
   const r = await env.DB.prepare(
     `SELECT b.device_id, b.device_name, b.device_model, b.app_version, b.created_at, b.uploaded_at, b.size, b.playlists,
-            (d.revoked_at IS NOT NULL OR d.id IS NULL) AS removed
+            (d.revoked_at IS NOT NULL OR d.id IS NULL) AS removed, d.revoked_at
        FROM backups b LEFT JOIN devices d ON d.id = b.device_id WHERE b.user_id = ?1 ORDER BY b.created_at DESC`
   ).bind(userId).all();
   return r.results.map((x) => ({
     deviceId: x.device_id, name: x.device_name, model: x.device_model, appVersion: x.app_version, createdAt: x.created_at,
     uploadedAt: x.uploaded_at, size: x.size, playlists: x.playlists, removed: Boolean(x.removed), thisTv: x.device_id === thisDevice,
+    deletesAt: x.revoked_at ? x.revoked_at + KEEP_MS : null,
   }));
 }
 
 async function tvBackupList(request, env) {
   const d = await deviceFor(request, env);
-  if (!d) return json({ error: 'This TV is not linked.' }, 401);
+  if (!d) return json({ error: 'This device is not linked.' }, 401);
   if (d.status !== 'active') return json({ error: 'This account is suspended.' }, 403);
   return json({ backups: await backupsFor(env, d.user_id, d.id) });
 }
@@ -205,7 +220,7 @@ async function tvBackupList(request, env) {
 /** GET /api/tv/backup?device=<id>: one of the account's backups, to restore. */
 async function tvBackupDownload(request, env, url) {
   const d = await deviceFor(request, env);
-  if (!d) return json({ error: 'This TV is not linked.' }, 401);
+  if (!d) return json({ error: 'This device is not linked.' }, 401);
   if (d.status !== 'active') return json({ error: 'This account is suspended.' }, 403);
   const row = await env.DB.prepare('SELECT data FROM backups WHERE device_id = ?1 AND user_id = ?2')
     .bind(url.searchParams.get('device') || d.id, d.user_id).first();
@@ -250,15 +265,15 @@ async function pendingTv(env, code) {
 export async function linkLookup(request, env) {
   const b = await body(request);
   const row = await pendingTv(env, b?.code);
-  if (!row) return json({ error: "That code wasn't found. Codes last 10 minutes: check the TV for the current one." }, 404);
+  if (!row) return json({ error: "That code wasn't found. Codes last 10 minutes: check the device for the current one." }, 404);
   return json({ name: row.device_name || '', model: row.device_model || '', appVersion: row.app_version || '' });
 }
 
 export async function linkApprove(request, env, user) {
   const b = await body(request);
   const row = await pendingTv(env, b?.code);
-  if (!row) return json({ error: "That code wasn't found. Codes last 10 minutes: check the TV for the current one." }, 404);
-  const name = clip(b?.name, 60) || row.device_name || row.device_model || 'TV';
+  if (!row) return json({ error: "That code wasn't found. Codes last 10 minutes: check the device for the current one." }, 404);
+  const name = clip(b?.name, 60) || row.device_name || row.device_model || 'Device';
   await env.DB.prepare("UPDATE link_codes SET status = 'approved', user_id = ?1, device_name = ?2 WHERE id = ?3 AND status = 'pending'")
     .bind(user.id, name, row.id).run();
   return json({ ok: true, name });
@@ -312,5 +327,5 @@ export async function backupPin(request, env, user) {
   const row = await env.DB.prepare('SELECT pin_enc FROM backups WHERE device_id = ?1 AND user_id = ?2').bind(String(b?.deviceId || ''), user.id).first();
   if (!row) return json({ error: 'That backup is no longer in your account.' }, 404);
   if (!row.pin_enc) return json({ error: "This backup's PIN wasn't saved." }, 404);
-  try { return json({ pin: await openPin(env, row.pin_enc) }); } catch { return json({ error: "The PIN couldn't be read. Make a new backup on the TV." }, 500); }
+  try { return json({ pin: await openPin(env, row.pin_enc) }); } catch { return json({ error: "The PIN couldn't be read. Make a new backup on the device." }, 500); }
 }

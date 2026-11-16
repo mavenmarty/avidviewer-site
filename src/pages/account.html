@@ -1,4 +1,4 @@
-<!-- {"title": "Your account — Avid Viewer", "description": "Your Avid Viewer account: passkeys, signed-in browsers, your TVs and privacy choices.", "nav": "account"} -->
+<!-- {"title": "Your account — Avid Viewer", "description": "Your Avid Viewer account: passkeys, signed-in browsers, your devices and privacy choices.", "nav": "account"} -->
 <div class="wrap">
   <header class="page-head">
     <h1>Your account</h1>
@@ -8,7 +8,7 @@
     <section class="setup-card" id="welcome" hidden>
       <p class="k">Welcome to Avid Viewer</p>
       <h2>One question first</h2>
-      <p>Should your account keep your watch history (where you stopped in each movie and episode) so every TV can pick up where you left off? You can change this, or delete the history, at any time.</p>
+      <p>Should your account keep your watch history (where you stopped in each movie and episode) so every device can pick up where you left off? You can change this, or delete the history, at any time.</p>
       <div class="btn-row">
         <button class="btn btn-primary" type="button" data-history="1">Yes, keep it</button>
         <button class="btn btn-ghost" type="button" data-history="0">No thanks</button>
@@ -16,15 +16,15 @@
     </section>
 
     <section class="setup-card">
-      <h2>Your TVs</h2>
+      <h2>Your devices</h2>
       <ul class="rows" id="devices"></ul>
-      <a class="btn btn-primary" href="/link/">Add a TV</a>
-      <p class="soft">On the new TV, choose <strong>Sign in to your account</strong> on the welcome screen (or Settings › Account › Link this TV), then enter the code it shows. Once it's linked, it can restore any of the backups below: copy your setup from another TV without typing a playlist again.</p>
+      <a class="btn btn-primary" href="/link/">Add a device</a>
+      <p class="soft">On the new device, choose <strong>Sign in to your account</strong> on the welcome screen (or Settings › Account › Link this device), then enter the code it shows. Once it's linked, it can restore any of the backups below: copy your setup from another device without typing a playlist again.</p>
     </section>
 
     <section class="setup-card">
       <h2>Backups</h2>
-      <p class="soft">Each linked TV keeps its most recent backup here, locked with the PIN chosen on that TV. TVs back up once a day when something changes. To restore, choose Restore from your account in Avid Viewer › Settings › Updates &amp; about, then use <strong>Show PIN</strong> here.</p>
+      <p class="soft">Each linked device keeps its most recent backup here, locked with the PIN chosen on that device. Devices back up once a day when something changes. To restore, choose Restore from your account in Avid Viewer › Settings › Updates &amp; about, then use <strong>Show PIN</strong> here.</p>
       <ul class="rows" id="backups"></ul>
     </section>
 
@@ -44,13 +44,13 @@
 
     <section class="setup-card">
       <h2>Privacy</h2>
-      <label class="switch-row"><input type="checkbox" id="watch-history"> Keep my watch history so every TV can pick up where I left off</label>
+      <label class="switch-row"><input type="checkbox" id="watch-history"> Keep my watch history so every device can pick up where I left off</label>
       <p class="fineprint">Watch history isn't collected yet; this choice will apply when it is.</p>
     </section>
 
     <section class="setup-card danger">
       <h2>Delete account</h2>
-      <p class="soft">Deletes your account, signs out every browser and removes your passkeys. Your TVs keep working with their own playlists. This can't be undone.</p>
+      <p class="soft">Deletes your account, signs out every browser and removes your passkeys. Your devices keep working with their own playlists. This can't be undone.</p>
       <label class="fld">Type your email address to confirm<input type="email" id="delete-confirm" autocomplete="off"></label>
       <button class="btn btn-danger" type="button" id="delete-account">Delete my account</button>
       <p class="form-msg" id="delete-msg" role="status" aria-live="polite"></p>
