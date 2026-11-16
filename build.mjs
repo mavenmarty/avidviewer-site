@@ -57,6 +57,7 @@ ${body}
   <div class="wrap">
     <nav aria-label="Footer">
       <a href="/guide/">User guide</a>
+      <a href="/setup/">Set up a TV</a>
       <a href="/releases/">What's new</a>
       <a href="/support/">Support</a>
       <a href="/privacy/">Privacy</a>
