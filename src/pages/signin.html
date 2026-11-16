@@ -1,0 +1,26 @@
+<!-- {"title": "Sign in — Avid Viewer", "description": "Sign in to your Avid Viewer account with an emailed link or a passkey.", "nav": "account"} -->
+<div class="wrap">
+  <header class="page-head">
+    <h1>Sign in</h1>
+    <p>No password needed. We email you a link, or you use a passkey on this device.</p>
+  </header>
+  <div class="setup">
+    <div class="setup-card" id="signin-card">
+      <div id="link-state" hidden>
+        <p id="link-msg" class="form-msg" role="status" aria-live="polite">Signing you in…</p>
+      </div>
+      <form id="email-form" novalidate>
+        <label class="fld">Email address
+          <input id="email" name="email" type="email" required autocomplete="email" placeholder="you@example.com">
+        </label>
+        <label class="hp" for="website">Leave this empty</label>
+        <input class="hp" id="website" name="website" type="text" tabindex="-1" autocomplete="off">
+        <button class="btn btn-primary" type="submit">Email me a sign-in link</button>
+      </form>
+      <p class="or"><span>or</span></p>
+      <button class="btn btn-ghost" type="button" id="passkey-signin">Sign in with a passkey</button>
+      <p id="signin-msg" class="form-msg" role="status" aria-live="polite"></p>
+      <p class="fineprint">New here? The email link creates your account. Avid Viewer accounts will add features such as picking up where you left off on every TV; the app itself is a media player and doesn't include any content. See our <a href="/privacy/">privacy notice</a>.</p>
+    </div>
+  </div>
+</div>

@@ -1,0 +1,53 @@
+<!-- {"title": "Your account — Avid Viewer", "description": "Your Avid Viewer account: passkeys, signed-in browsers, your TVs and privacy choices.", "nav": "account"} -->
+<div class="wrap">
+  <header class="page-head">
+    <h1>Your account</h1>
+    <p id="acct-email">Loading…</p>
+  </header>
+  <div class="account" id="account" hidden>
+    <section class="setup-card" id="welcome" hidden>
+      <p class="k">Welcome to Avid Viewer</p>
+      <h2>One question first</h2>
+      <p>Should your account keep your watch history (where you stopped in each movie and episode) so every TV can pick up where you left off? You can change this, or delete the history, at any time.</p>
+      <div class="btn-row">
+        <button class="btn btn-primary" type="button" data-history="1">Yes, keep it</button>
+        <button class="btn btn-ghost" type="button" data-history="0">No thanks</button>
+      </div>
+    </section>
+
+    <section class="setup-card">
+      <h2>Your TVs</h2>
+      <p class="soft">Linking a TV to your account is coming next. TVs you link will show here, with their name, model and app version, and you'll be able to rename or remove them.</p>
+    </section>
+
+    <section class="setup-card">
+      <h2>Passkeys</h2>
+      <p class="soft">A passkey signs you in with your fingerprint, face or device PIN instead of an email link.</p>
+      <ul class="rows" id="passkeys"></ul>
+      <button class="btn btn-ghost" type="button" id="add-passkey">＋ Add a passkey</button>
+      <p class="form-msg" id="passkey-msg" role="status" aria-live="polite"></p>
+    </section>
+
+    <section class="setup-card">
+      <h2>Signed-in browsers</h2>
+      <ul class="rows" id="sessions"></ul>
+      <button class="btn btn-ghost" type="button" id="end-others">Sign out everywhere else</button>
+    </section>
+
+    <section class="setup-card">
+      <h2>Privacy</h2>
+      <label class="switch-row"><input type="checkbox" id="watch-history"> Keep my watch history so every TV can pick up where I left off</label>
+      <p class="fineprint">Watch history isn't collected yet; this choice will apply when it is.</p>
+    </section>
+
+    <section class="setup-card danger">
+      <h2>Delete account</h2>
+      <p class="soft">Deletes your account, signs out every browser and removes your passkeys. Your TVs keep working with their own playlists. This can't be undone.</p>
+      <label class="fld">Type your email address to confirm<input type="email" id="delete-confirm" autocomplete="off"></label>
+      <button class="btn btn-danger" type="button" id="delete-account">Delete my account</button>
+      <p class="form-msg" id="delete-msg" role="status" aria-live="polite"></p>
+    </section>
+
+    <p><button class="btn btn-ghost" type="button" id="signout">Sign out</button></p>
+  </div>
+</div>

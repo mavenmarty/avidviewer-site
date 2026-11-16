@@ -46,6 +46,7 @@ function layout({ title, description, nav, path, body, scripts = '' }) {
       <a href="/guide/"${cur('guide')}>User guide</a>
       <a href="/releases/"${cur('releases')}>What's new</a>
       <a href="/support/"${cur('support')}>Support</a>
+      <a href="/account/"${cur('account')}>Account</a>
       <a class="btn btn-primary" href="/#notify">Get launch news</a>
     </nav>
   </div>
@@ -173,6 +174,9 @@ async function buildGuide() {
 async function main() {
   await rm(OUT, { recursive: true, force: true });
   await cp('public', OUT, { recursive: true });
+  // Passkeys in the browser: @simplewebauthn/browser's bundle (global SimpleWebAuthnBrowser).
+  await mkdir(join(OUT, 'js'), { recursive: true });
+  await cp('node_modules/@simplewebauthn/browser/dist/bundle/index.umd.min.js', join(OUT, 'js', 'webauthn.js'));
 
   for (const f of await readdir('src/pages')) {
     if (!f.endsWith('.html')) continue;
@@ -180,7 +184,8 @@ async function main() {
     const name = basename(f, '.html');
     const path = name === 'index' ? '/' : `/${name}/`;
     const scripts = name === 'index' ? '<script src="/notify.js" defer></script>'
-      : name === 'setup' ? '<script src="/setup.js" defer></script>' : '';
+      : name === 'setup' ? '<script src="/setup.js" defer></script>'
+      : name === 'signin' || name === 'account' ? '<script src="/js/webauthn.js" defer></script><script src="/account.js" defer></script>' : '';
     const html = layout({ ...meta, path, body, scripts });
     if (name === 'index') await writeFile(join(OUT, 'index.html'), html);
     else if (name === '404') await writeFile(join(OUT, '404.html'), html);

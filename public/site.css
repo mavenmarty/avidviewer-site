@@ -179,7 +179,7 @@ p { margin: 0; }
 .seg.small label { padding: 8px 12px; font-size: 14px; }
 .fld { display: flex; flex-direction: column; gap: 6px; font-size: 14px; color: var(--soft); min-width: 0; }
 .row2 .fld { flex: 1 1 200px; }
-.fld input[type=text], .fld input[type=url], .fld input[type=password], .fld input[type=file] { background: var(--card-2); border: 1px solid var(--line-2); border-radius: 10px; color: var(--text); font: 16px var(--body); padding: 12px 14px; }
+.fld input[type=text], .fld input[type=url], .fld input[type=email], .fld input[type=password], .fld input[type=file] { background: var(--card-2); border: 1px solid var(--line-2); border-radius: 10px; color: var(--text); font: 16px var(--body); padding: 12px 14px; }
 .fld input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
 .row2 { display: flex; flex-wrap: wrap; gap: 12px; }
 .pl { display: flex; flex-direction: column; gap: 12px; padding: 18px 0; border-bottom: 1px solid var(--line); }
@@ -193,3 +193,20 @@ button.btn-ghost { background: transparent; color: var(--text); }
 .result .k { font-size: 13px; font-weight: 600; color: var(--accent); letter-spacing: 0.04em; }
 .result ol { color: var(--soft); padding-left: 20px; display: flex; flex-direction: column; gap: 6px; }
 [hidden] { display: none !important; }
+
+/* ---------- /signin/ and /account/ ---------- */
+.account { display: flex; flex-direction: column; align-items: center; gap: 20px; padding: 32px 0 80px; }
+.account h2 { font-size: 22px; }
+.soft { color: var(--soft); }
+.or { display: flex; align-items: center; gap: 12px; color: var(--muted); font-size: 14px; }
+.or::before, .or::after { content: ""; flex: 1; border-top: 1px solid var(--line); }
+.rows { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; }
+.rows li { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.rows li span:first-child { color: var(--text); font-weight: 600; }
+.rows li .soft { font-size: 14px; flex: 1 1 auto; }
+.btn-row { display: flex; flex-wrap: wrap; gap: 10px; }
+.switch-row { display: flex; gap: 10px; align-items: center; color: var(--text); }
+.btn-danger { background: transparent; border-color: #8A3B2E; color: #F2A79B; }
+.btn-danger:hover { border-color: #F2A79B; }
+.setup-card.danger { border-color: #4A2620; }
+#email-form { display: flex; flex-direction: column; gap: 14px; }

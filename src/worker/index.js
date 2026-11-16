@@ -1,4 +1,6 @@
 // avidviewer.app: serves the static site and the small /api it needs.
+import { handleAccountApi } from './auth.js';
+
 // Phase 1: POST /api/notify stores a launch-news sign-up in D1.
 // Setup codes (Nov 15): POST /api/setup stores an encrypted setup for 30 minutes; GET /api/setup/<id> hands it to a TV.
 
@@ -103,6 +105,14 @@ export default {
     }
 
     if (url.pathname.startsWith('/api/')) {
+      // Accounts (sign-in, Account page, passkeys): see auth.js.
+      try {
+        const r = await handleAccountApi(request, env, url);
+        if (r) return r;
+      } catch (e) {
+        console.error('account api failed', e);
+        return json({ error: 'Something went wrong on our side. Please try again later.' }, 500);
+      }
       if (url.pathname === '/api/notify') {
         if (request.method !== 'POST') return json({ error: 'Use POST.' }, 405);
         try {
