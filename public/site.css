@@ -169,3 +169,25 @@ p { margin: 0; }
   .prose a { color: #111; }
   .page-head { border: 0; padding-top: 0; }
 }
+
+/* ---------- /setup (setup codes) ---------- */
+.setup { display: flex; justify-content: center; padding: 32px 0 80px; }
+.setup-card { width: 100%; max-width: 640px; background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 28px; display: flex; flex-direction: column; gap: 16px; }
+.seg { border: 0; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+.seg label { display: inline-flex; align-items: center; gap: 8px; padding: 10px 14px; border: 1px solid var(--line-2); border-radius: 10px; cursor: pointer; color: var(--soft); }
+.seg label:has(input:checked) { border-color: var(--accent); color: var(--text); }
+.seg.small label { padding: 8px 12px; font-size: 14px; }
+.fld { display: flex; flex-direction: column; gap: 6px; font-size: 14px; color: var(--soft); flex: 1 1 200px; min-width: 0; }
+.fld input[type=text], .fld input[type=url], .fld input[type=password], .fld input[type=file] { background: var(--card-2); border: 1px solid var(--line-2); border-radius: 10px; color: var(--text); font: 16px var(--body); padding: 12px 14px; }
+.fld input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.row2 { display: flex; flex-wrap: wrap; gap: 12px; }
+.pl { display: flex; flex-direction: column; gap: 12px; padding: 18px 0; border-bottom: 1px solid var(--line); }
+.pl-xtream, .pl-m3u { display: flex; flex-direction: column; gap: 12px; }
+.pl-head { display: flex; justify-content: space-between; align-items: center; }
+.pl-n { font-weight: 600; color: var(--text); }
+.linkish { background: none; border: 0; color: var(--accent); cursor: pointer; font: 14px var(--body); }
+.setup-card .btn { align-self: flex-start; }
+.result .code { font-family: var(--display); font-size: clamp(40px, 9vw, 64px); letter-spacing: 0.08em; color: var(--text); }
+.result .k { font-size: 13px; font-weight: 600; color: var(--accent); letter-spacing: 0.04em; }
+.result ol { color: var(--soft); padding-left: 20px; display: flex; flex-direction: column; gap: 6px; }
+[hidden] { display: none !important; }

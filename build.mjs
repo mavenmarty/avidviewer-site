@@ -178,7 +178,8 @@ async function main() {
     const { meta, body } = readMeta(await readFile(join('src/pages', f), 'utf8'));
     const name = basename(f, '.html');
     const path = name === 'index' ? '/' : `/${name}/`;
-    const scripts = name === 'index' ? '<script src="/notify.js" defer></script>' : '';
+    const scripts = name === 'index' ? '<script src="/notify.js" defer></script>'
+      : name === 'setup' ? '<script src="/setup.js" defer></script>' : '';
     const html = layout({ ...meta, path, body, scripts });
     if (name === 'index') await writeFile(join(OUT, 'index.html'), html);
     else if (name === '404') await writeFile(join(OUT, '404.html'), html);

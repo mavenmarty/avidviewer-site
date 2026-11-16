@@ -1,0 +1,69 @@
+<!-- {"title": "Set up a TV — Avid Viewer", "description": "Enter your playlist on your phone or computer and get a code to type on your TV. No typing logins with a remote.", "nav": "setup"} -->
+<div class="wrap">
+  <header class="page-head">
+    <h1>Set up a TV</h1>
+    <p>Enter your playlist here, get a short code, and type it on your TV in Avid Viewer: <strong>Enter a setup code</strong> on the welcome screen, or Settings › Playlists › Add playlist › <strong>Use a setup code</strong>.</p>
+  </header>
+
+  <div class="setup">
+    <form id="setup-form" class="setup-card" novalidate>
+      <fieldset class="seg" aria-label="What to send to the TV">
+        <label><input type="radio" name="mode" value="playlists" checked> Add playlists</label>
+        <label><input type="radio" name="mode" value="backup"> Restore a backup</label>
+      </fieldset>
+
+      <div id="mode-playlists">
+        <div id="playlists"></div>
+        <button type="button" class="btn btn-ghost" id="add-playlist">＋ Another playlist</button>
+      </div>
+
+      <div id="mode-backup" hidden>
+        <label class="fld">Backup file (.avbak)
+          <input type="file" id="backup-file" accept=".avbak,application/json">
+        </label>
+        <p class="fineprint">Made in Avid Viewer under Settings › Updates &amp; about › Backup &amp; restore. It stays locked with its PIN: the TV asks for it.</p>
+      </div>
+
+      <label class="hp" for="website">Leave this empty</label>
+      <input class="hp" id="website" name="website" type="text" tabindex="-1" autocomplete="off">
+
+      <button class="btn btn-primary" type="submit">Get a setup code</button>
+      <p id="setup-msg" class="form-msg" role="status" aria-live="polite"></p>
+      <p class="fineprint"><strong>Private by design:</strong> your logins are encrypted in this browser with the code before anything is sent. Our server keeps only the scrambled copy, for 30 minutes, and can't read it. Avid Viewer is a media player and doesn't provide any content; add only playlists you have the rights to.</p>
+    </form>
+
+    <div id="setup-result" class="setup-card result" hidden>
+      <p class="k">Your setup code</p>
+      <p id="code" class="code" aria-live="polite"></p>
+      <p>Type it on your TV in Avid Viewer. It works until <span id="code-expires"></span> (30 minutes).</p>
+      <ol>
+        <li>Open Avid Viewer. On the welcome screen choose <strong>Enter a setup code</strong>. If you already have a playlist: Settings › Playlists › Add playlist › <strong>Use a setup code</strong>.</li>
+        <li>Type the code with the remote and press Done.</li>
+        <li>The TV checks each playlist and adds it. A backup asks for its PIN.</li>
+      </ol>
+      <button type="button" class="btn btn-ghost" id="start-over">Make another code</button>
+    </div>
+  </div>
+
+  <template id="playlist-tpl">
+    <div class="pl">
+      <div class="pl-head"><span class="pl-n">Playlist 1</span><button type="button" class="pl-remove linkish">Remove</button></div>
+      <fieldset class="seg small" aria-label="Playlist type">
+        <label><input type="radio" value="xtream" checked> Xtream Codes login</label>
+        <label><input type="radio" value="m3u"> M3U link</label>
+      </fieldset>
+      <label class="fld">Name (optional)<input class="f-name" type="text" maxlength="60" placeholder="Living room"></label>
+      <div class="pl-xtream">
+        <label class="fld">Server<input class="f-server" type="url" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="http://example.com:8080"></label>
+        <div class="row2">
+          <label class="fld">Username<input class="f-user" type="text" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
+          <label class="fld">Password<input class="f-pass" type="password" autocomplete="off"></label>
+        </div>
+      </div>
+      <div class="pl-m3u" hidden>
+        <label class="fld">M3U link<input class="f-m3u" type="url" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="https://…/playlist.m3u"></label>
+      </div>
+      <label class="fld">Guide (XMLTV) link, optional<input class="f-epg" type="url" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="https://…/guide.xml.gz"></label>
+    </div>
+  </template>
+</div>
