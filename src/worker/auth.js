@@ -176,7 +176,7 @@ async function verifyLink(request, env) {
   const used = await env.DB.prepare('UPDATE sign_in_links SET used_at = ?1 WHERE token_hash = ?2 AND used_at IS NULL').bind(now, hash).run();
   if (!used.meta?.changes) return json({ error: 'This sign-in link was already used. Please ask for a new one.' }, 400);
   const u = await userForEmail(env, row.email);
-  if (u.status !== 'active') return json({ error: 'This account is suspended. Contact bugs@avidviewer.app.' }, 403);
+  if (u.status !== 'active') return json({ error: 'This account is suspended. Contact support@avidviewer.app.' }, 403);
   const cookie = await startSession(request, env, u.id);
   return json({ ok: true, newAccount: u.created }, 200, { 'set-cookie': cookie });
 }
@@ -261,7 +261,7 @@ async function passkeyLoginVerify(request, env, url) {
     return json({ error: "That passkey couldn't be checked. Please try again." }, 400);
   }
   if (!v.verified) return json({ error: "That passkey couldn't be checked. Please try again." }, 400);
-  if (pk.status !== 'active') return json({ error: 'This account is suspended. Contact bugs@avidviewer.app.' }, 403);
+  if (pk.status !== 'active') return json({ error: 'This account is suspended. Contact support@avidviewer.app.' }, 403);
   await env.DB.prepare('UPDATE passkeys SET counter = ?1, last_used = ?2 WHERE id = ?3').bind(v.authenticationInfo.newCounter, Date.now(), pk.id).run();
   const cookie = await startSession(request, env, pk.user_id);
   return json({ ok: true }, 200, { 'set-cookie': cookie });
