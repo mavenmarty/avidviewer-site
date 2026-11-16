@@ -7,7 +7,8 @@
 //   id     hex SHA-256 of "avidviewer-setup-id:v1:" + code
 //   key    PBKDF2-HMAC-SHA256(code, "avidviewer-setup-key:v1", 100,000 rounds) → AES-256-GCM
 //   data   Base64(12-byte IV + ciphertext with its 16-byte tag)
-//   JSON   {"v":1,"playlists":[{type,name,server,username,password,m3u,epg}],"backup":"<.avbak text>"}
+//   JSON   {"v":1,"playlists":[{type,name,server,username,password,m3u,epg}],"backup":"<.avbak text>","link":"<token>"}
+//          ("link", when signed in: a one-time token the TV trades for its own account link, /api/tv/link/claim)
 (function (root) {
   var ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
   var ROUNDS = 100000;
@@ -80,6 +81,17 @@
   document.getElementById('add-playlist').addEventListener('click', addPlaylist);
   addPlaylist(); showMode();
 
+  // Signed in: offer to link the TV to the account too (a one-time link token travels inside the encrypted setup).
+  var signedIn = false;
+  fetch('/api/me', { credentials: 'same-origin' }).then(function (r) {
+    if (!r.ok) return;
+    return r.json().then(function (me) {
+      signedIn = true;
+      document.getElementById('link-email').textContent = me.email;
+      document.getElementById('link-opt').hidden = false;
+    });
+  }).catch(function () {});
+
   function v(node, sel) { var el = node.querySelector(sel); return el ? el.value.trim() : ''; }
   function fail(text) { msg.className = 'form-msg err'; msg.textContent = text; }
 
@@ -116,6 +128,11 @@
     msg.className = 'form-msg'; msg.textContent = '';
     var payload;
     try { payload = await collect(); } catch (err) { fail(err.message); return; }
+    if (signedIn && document.getElementById('link-account').checked) {
+      var lt = await fetch('/api/link/setup-token', { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin', body: '{}' })
+        .then(function (r) { return r.ok ? r.json() : {}; }).catch(function () { return {}; });
+      if (lt.linkToken) payload.link = lt.linkToken;
+    }
     button.disabled = true;
     msg.textContent = 'Making your code…';
     try {

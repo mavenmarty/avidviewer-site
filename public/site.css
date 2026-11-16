@@ -210,3 +210,7 @@ button.btn-ghost { background: transparent; color: var(--text); }
 .btn-danger:hover { border-color: #F2A79B; }
 .setup-card.danger { border-color: #4A2620; }
 #email-form { display: flex; flex-direction: column; gap: 14px; }
+
+/* ---------- /link/ and Your TVs ---------- */
+.code-input { font-family: var(--display); font-size: 28px !important; letter-spacing: 0.12em; text-transform: uppercase; }
+.rows li input.rename { background: var(--card-2); border: 1px solid var(--line-2); border-radius: 8px; color: var(--text); font: 15px var(--body); padding: 6px 10px; }

@@ -22,6 +22,7 @@ import {
 } from '@simplewebauthn/server';
 import { isoBase64URL } from '@simplewebauthn/server/helpers';
 import { mailConfigured, sendMail } from './mail.js';
+import { linkLookup, linkApprove, linkSetupToken, devicesFor, deviceRename, deviceRemove } from './devices.js';
 
 const LINK_TTL = 15 * 60 * 1000;
 const SESSION_TTL = 30 * 24 * 3600 * 1000;
@@ -38,7 +39,7 @@ export function json(body, status = 200, headers = {}) {
   });
 }
 
-function randomToken(bytes = 32) {
+export function randomToken(bytes = 32) {
   return isoBase64URL.fromBuffer(crypto.getRandomValues(new Uint8Array(bytes)));
 }
 
@@ -47,7 +48,7 @@ export async function sha256hex(text) {
   return [...new Uint8Array(d)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-function ipOf(request) { return request.headers.get('cf-connecting-ip') || ''; }
+export function ipOf(request) { return request.headers.get('cf-connecting-ip') || ''; }
 
 /** "Chrome on Windows" from a User-Agent, for the list of signed-in browsers. */
 function labelFor(ua = '') {
@@ -115,7 +116,7 @@ async function userForEmail(env, email) {
   return { ...u, created };
 }
 
-async function body(request) {
+export async function body(request) {
   try { return await request.json(); } catch { return null; }
 }
 
@@ -145,7 +146,9 @@ async function emailLink(request, env, url) {
   const token = randomToken();
   await env.DB.prepare('INSERT INTO sign_in_links (token_hash, email, created_at, expires_at, ip_hash) VALUES (?1, ?2, ?3, ?4, ?5)')
     .bind(await sha256hex(token), email, now, now + LINK_TTL, ipHash).run();
-  const link = `${url.origin}/signin/#t=${token}`;
+  // Where to go after signing in (e.g. /link/?c=… when linking a TV): a path on this site only.
+  const next = typeof b.next === 'string' && /^\/(?!\/)[\w\-\/?=&.%]*$/.test(b.next) ? b.next : '';
+  const link = `${url.origin}/signin/#t=${token}` + (next ? `&next=${encodeURIComponent(next)}` : '');
 
   if (mailConfigured(env)) {
     const text = `Here's your link to sign in to Avid Viewer:\n\n${link}\n\nIt works once, for 15 minutes. If you didn't ask for it, you can ignore this email: nobody can sign in without the link.\n`;
@@ -278,6 +281,7 @@ async function me(env, user) {
     createdAt: user.created_at,
     admin: user.role === 'admin',
     watchHistory: Boolean(user.watch_history),
+    devices: await devicesFor(env, user.id),
     passkeys: passkeys.results.map((p) => ({ id: p.id, name: p.name, createdAt: p.created_at, lastUsed: p.last_used })),
     sessions: sessions.results.map((s) => ({
       id: s.token_hash.slice(0, 16), label: s.label || 'A browser', createdAt: s.created_at, lastSeen: s.last_seen,
@@ -314,6 +318,8 @@ async function deleteAccount(request, env, user) {
     env.DB.prepare('DELETE FROM sessions WHERE user_id = ?1').bind(user.id),
     env.DB.prepare('DELETE FROM passkeys WHERE user_id = ?1').bind(user.id),
     env.DB.prepare('DELETE FROM webauthn_challenges WHERE user_id = ?1').bind(user.id),
+    env.DB.prepare('DELETE FROM devices WHERE user_id = ?1').bind(user.id),
+    env.DB.prepare('DELETE FROM link_codes WHERE user_id = ?1').bind(user.id),
     env.DB.prepare('DELETE FROM sign_in_links WHERE email = ?1').bind(user.email),
     env.DB.prepare('DELETE FROM users WHERE id = ?1').bind(user.id),
   ]);
@@ -328,7 +334,7 @@ export async function handleAccountApi(request, env, realUrl) {
   // address the browser really uses, for links, the Origin check and passkeys. Unset in production.
   const url = env.SITE_ORIGIN ? new URL(realUrl.pathname + realUrl.search, env.SITE_ORIGIN) : realUrl;
   const p = url.pathname;
-  if (!(p.startsWith('/api/auth/') || p === '/api/me' || p.startsWith('/api/account/') || p.startsWith('/api/passkeys/'))) return null;
+  if (!(p.startsWith('/api/auth/') || p === '/api/me' || p.startsWith('/api/account/') || p.startsWith('/api/passkeys/') || p.startsWith('/api/link/'))) return null;
 
   if (request.method === 'POST') {
     // Only this site's own pages may post here (with SameSite=Lax cookies, this stops cross-site form posts).
@@ -358,6 +364,11 @@ export async function handleAccountApi(request, env, realUrl) {
     case '/api/account/settings': return settings(request, env, user);
     case '/api/account/sessions/end': return endSessions(request, env, user);
     case '/api/account/delete': return deleteAccount(request, env, user);
+    case '/api/account/devices/rename': return deviceRename(request, env, user);
+    case '/api/account/devices/remove': return deviceRemove(request, env, user);
+    case '/api/link/lookup': return linkLookup(request, env);
+    case '/api/link/approve': return linkApprove(request, env, user);
+    case '/api/link/setup-token': return linkSetupToken(env, user);
     case '/api/passkeys/register/options': return passkeyRegisterOptions(env, url, user);
     case '/api/passkeys/register/verify': return passkeyRegisterVerify(request, env, url, user);
     case '/api/passkeys/delete': {

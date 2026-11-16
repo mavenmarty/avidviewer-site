@@ -10,6 +10,11 @@ binding = "ASSETS"
 not_found_handling = "404-page"
 run_worker_first = true
 
+# Plain (non-secret) settings. Secrets (POSTMARK_TOKEN, ADMIN_EMAILS) are set in the Cloudflare dashboard as type
+# Secret and survive deploys; a plain variable set only in the dashboard is replaced by this list on every deploy.
+[vars]
+MAIL_FROM = "Avid Viewer <hello@avidviewer.app>"
+
 [[d1_databases]]
 binding = "DB"
 database_name = "avidviewer"

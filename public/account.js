@@ -14,7 +14,7 @@
   }
   function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
 
-  async function passkeySignIn(msg) {
+  async function passkeySignIn(msg, next) {
     if (!WA || !WA.browserSupportsWebAuthn()) { say(msg, "This browser doesn't support passkeys. Use the email link instead.", true); return; }
     say(msg, 'Waiting for your passkey…');
     var o = await post('/api/passkeys/login/options');
@@ -23,7 +23,7 @@
     try { resp = await WA.startAuthentication({ optionsJSON: o.options }); } catch (e) { say(msg, 'Passkey sign-in was cancelled.', true); return; }
     var v = await post('/api/passkeys/login/verify', { challengeId: o.challengeId, response: resp });
     if (!v._ok) { say(msg, v.error || "That didn't work.", true); return; }
-    location.href = '/account/';
+    location.href = next || '/account/';
   }
 
   // ---------------------------------------------------------------- /signin/
@@ -31,6 +31,11 @@
   if (form) {
     var msg = document.getElementById('signin-msg');
     var t = (location.hash.match(/[#&]t=([A-Za-z0-9_-]+)/) || [])[1];
+    // After signing in, go back where the person came from (e.g. /link/?c=…): from the link's #next or ?next.
+    var nextRaw = (location.hash.match(/[#&]next=([^&]+)/) || [])[1] || (location.search.match(/[?&]next=([^&]+)/) || [])[1];
+    var next = '';
+    try { next = nextRaw ? decodeURIComponent(nextRaw) : ''; } catch (e) { next = ''; }
+    if (!/^\/(?!\/)/.test(next)) next = '';
     // A link opened in a tab already on this page only changes the #fragment: start over so it's used.
     window.addEventListener('hashchange', function () { if (/[#&]t=/.test(location.hash)) location.reload(); });
     if (t) {
@@ -38,25 +43,68 @@
       document.getElementById('link-state').hidden = false;
       form.hidden = true; document.querySelector('.or').hidden = true; document.getElementById('passkey-signin').hidden = true;
       post('/api/auth/verify', { token: t }).then(function (d) {
-        if (d._ok) { location.href = '/account/' + (d.newAccount ? '?welcome=1' : ''); return; }
+        if (d._ok) { location.href = next || ('/account/' + (d.newAccount ? '?welcome=1' : '')); return; }
         say(document.getElementById('link-msg'), d.error || "That link didn't work.", true);
         form.hidden = false; document.querySelector('.or').hidden = false; document.getElementById('passkey-signin').hidden = false;
       });
     } else {
-      fetch('/api/me', { credentials: 'same-origin' }).then(function (r) { if (r.ok) location.href = '/account/'; });
+      fetch('/api/me', { credentials: 'same-origin' }).then(function (r) { if (r.ok) location.href = next || '/account/'; });
     }
     form.addEventListener('submit', function (e) {
       e.preventDefault();
       var b = form.querySelector('button'); b.disabled = true;
       say(msg, 'Sending…');
-      post('/api/auth/email', { email: form.email.value, website: form.website.value }).then(function (d) {
+      post('/api/auth/email', { email: form.email.value, website: form.website.value, next: next || undefined }).then(function (d) {
         b.disabled = false;
         if (!d._ok) { say(msg, d.error || 'Something went wrong.', true); return; }
         say(msg, d.message);
         if (d.devLink) { var a = el('a', null, ' Open it'); a.href = d.devLink; a.id = 'dev-link'; msg.appendChild(a); }
       });
     });
-    document.getElementById('passkey-signin').addEventListener('click', function () { passkeySignIn(msg); });
+    document.getElementById('passkey-signin').addEventListener('click', function () { passkeySignIn(msg, next); });
+  }
+
+  // ---------------------------------------------------------------- /link/
+  var lf = document.getElementById('link-form');
+  if (lf) {
+    var codeIn = document.getElementById('link-code'), lmsg = document.getElementById('link-msg');
+    var found = null;
+    var pre = (location.search.match(/[?&]c=([A-Za-z0-9-]+)/) || [])[1] || '';
+    fetch('/api/me', { credentials: 'same-origin' }).then(function (r) {
+      if (r.status === 401) { location.href = '/signin/?next=' + encodeURIComponent('/link/' + (pre ? '?c=' + pre : '')); return; }
+      return r.json().then(function (me) {
+        document.getElementById('link-who').textContent = 'The TV will be linked to ' + me.email + '.';
+        lf.hidden = false;
+        if (pre) { codeIn.value = pre.toUpperCase(); lookup(); } else codeIn.focus();
+      });
+    });
+    function reset() { found = null; document.getElementById('link-found').hidden = true; document.getElementById('link-go').textContent = 'Find the TV'; }
+    codeIn.addEventListener('input', reset);
+    function lookup() {
+      say(lmsg, 'Looking for the TV…');
+      post('/api/link/lookup', { code: codeIn.value }).then(function (d) {
+        if (!d._ok) { say(lmsg, d.error || "That code wasn't found.", true); return; }
+        found = d; say(lmsg, '');
+        document.getElementById('link-tv').textContent = 'Found: ' + ([d.model, d.appVersion ? 'Avid Viewer ' + d.appVersion : ''].filter(Boolean).join(' · ') || 'a TV');
+        document.getElementById('link-name').value = d.name || '';
+        document.getElementById('link-found').hidden = false;
+        document.getElementById('link-go').textContent = 'Link this TV';
+      });
+    }
+    lf.addEventListener('submit', function (e) {
+      e.preventDefault();
+      if (!found) { lookup(); return; }
+      post('/api/link/approve', { code: codeIn.value, name: document.getElementById('link-name').value }).then(function (d) {
+        if (!d._ok) { say(lmsg, d.error || "That didn't work.", true); reset(); return; }
+        document.getElementById('link-done-name').textContent = d.name;
+        lf.hidden = true; document.getElementById('link-done').hidden = false;
+      });
+    });
+    document.getElementById('link-another').addEventListener('click', function () {
+      codeIn.value = ''; reset(); say(lmsg, ''); history.replaceState(null, '', '/link/');
+      document.getElementById('link-done').hidden = true; lf.hidden = false; codeIn.focus();
+    });
+    return;
   }
 
   // ---------------------------------------------------------------- /account/
@@ -66,6 +114,23 @@
 
   function render() {
     document.getElementById('acct-email').textContent = 'Signed in as ' + me.email + (me.admin ? ' · administrator' : '');
+    var tv = document.getElementById('devices'); tv.innerHTML = '';
+    if (!me.devices.length) tv.appendChild(el('li', 'soft', 'No TVs linked yet.'));
+    me.devices.forEach(function (d) {
+      var li = el('li'); li.appendChild(el('span', null, d.name));
+      li.appendChild(el('span', 'soft', [d.model, d.appVersion ? 'Avid Viewer ' + d.appVersion : '', 'last seen ' + when(d.lastSeen)].filter(Boolean).join(' · ')));
+      var rn = el('button', 'linkish', 'Rename'); rn.type = 'button';
+      rn.addEventListener('click', function () {
+        var n = prompt('Name for this TV', d.name);
+        if (n && n.trim()) post('/api/account/devices/rename', { id: d.id, name: n.trim() }).then(load);
+      });
+      var rm = el('button', 'linkish', 'Remove'); rm.type = 'button';
+      rm.addEventListener('click', function () {
+        if (!confirm('Remove "' + d.name + '"? It will be signed out of your account the next time it checks in. Its playlists stay on the TV.')) return;
+        post('/api/account/devices/remove', { id: d.id }).then(load);
+      });
+      li.appendChild(rn); li.appendChild(rm); tv.appendChild(li);
+    });
     var pk = document.getElementById('passkeys'); pk.innerHTML = '';
     if (!me.passkeys.length) pk.appendChild(el('li', 'soft', 'No passkeys yet.'));
     me.passkeys.forEach(function (p) {
