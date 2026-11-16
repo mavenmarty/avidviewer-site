@@ -174,7 +174,8 @@ async function main() {
     const path = name === 'index' ? '/' : `/${name}/`;
     const scripts = name === 'index' ? '<script src="/notify.js" defer></script>'
       : name === 'setup' ? '<script src="/setup.js" defer></script>'
-      : name === 'signin' || name === 'account' || name === 'link' ? '<script src="/js/webauthn.js" defer></script><script src="/account.js" defer></script>' : '';
+      : name === 'signin' || name === 'account' || name === 'link' ? '<script src="/js/webauthn.js" defer></script><script src="/account.js" defer></script>'
+      : name === 'admin' ? '<script src="/js/webauthn.js" defer></script><script src="/admin.js" defer></script>' : '';
     const html = layout({ ...meta, path, body, scripts });
     if (name === 'index') await writeFile(join(OUT, 'index.html'), html);
     else if (name === '404') await writeFile(join(OUT, '404.html'), html);

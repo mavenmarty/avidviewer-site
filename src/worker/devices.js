@@ -123,7 +123,9 @@ async function tvClaim(request, env) {
 
 async function tvMe(request, env) {
   const d = await deviceFor(request, env);
-  if (!d || d.status !== 'active') return json({ error: 'This TV is not linked.' }, 401);
+  if (!d) return json({ error: 'This TV is not linked.' }, 401);
+  // A suspended account's TVs stay linked (403 changes nothing on the TV), so lifting the suspension restores them.
+  if (d.status !== 'active') return json({ error: 'This account is suspended.' }, 403);
   const version = clip(request.headers.get('x-app-version') || '', 30);
   await env.DB.prepare('UPDATE devices SET last_seen = ?1, app_version = COALESCE(NULLIF(?2, \'\'), app_version) WHERE id = ?3')
     .bind(Date.now(), version, d.id).run();

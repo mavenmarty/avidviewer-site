@@ -1,0 +1,63 @@
+<!-- {"title": "Admin — Avid Viewer", "description": "Avid Viewer administration.", "nav": "admin"} -->
+<div class="wrap admin">
+  <header class="page-head">
+    <h1>Admin</h1>
+    <p id="adm-who">Loading…</p>
+  </header>
+
+  <div id="adm-gate" class="setup-card" hidden>
+    <p id="adm-gate-msg"></p>
+    <button class="btn btn-primary" type="button" id="adm-passkey" hidden>Sign in with your passkey</button>
+    <p class="form-msg" id="adm-gate-err" role="status" aria-live="polite"></p>
+  </div>
+
+  <div id="adm" hidden>
+    <nav class="adm-tabs" role="tablist">
+      <button type="button" role="tab" data-tab="dash" aria-selected="true">Dashboard</button>
+      <button type="button" role="tab" data-tab="people">People</button>
+      <button type="button" role="tab" data-tab="audit">Audit log</button>
+      <button type="button" role="tab" data-tab="news">Launch news</button>
+    </nav>
+
+    <section data-panel="dash">
+      <div class="adm-stats" id="adm-stats"></div>
+      <div class="adm-two">
+        <div class="setup-card"><h2>New accounts, last 30 days</h2><div class="adm-bars" id="adm-daily"></div></div>
+        <div class="setup-card"><h2>Linked TVs by app version</h2><table class="adm-table" id="adm-versions"></table></div>
+      </div>
+    </section>
+
+    <section data-panel="people" hidden>
+      <div class="adm-search">
+        <input type="search" id="adm-q" placeholder="Search by email" autocomplete="off">
+        <select id="adm-status"><option value="">Everyone</option><option value="active">Active</option><option value="suspended">Suspended</option></select>
+      </div>
+      <div class="adm-two wide-right">
+        <div class="setup-card"><table class="adm-table clickable" id="adm-users"></table></div>
+        <div class="setup-card" id="adm-user"><p class="soft">Choose an account to see its TVs, sign-ins, notes and history.</p></div>
+      </div>
+    </section>
+
+    <section data-panel="audit" hidden>
+      <div class="setup-card"><table class="adm-table" id="adm-audit"></table></div>
+    </section>
+
+    <section data-panel="news" hidden>
+      <div class="setup-card">
+        <p><a class="btn btn-ghost" href="/api/admin/launch-news?format=csv">Download CSV</a></p>
+        <table class="adm-table" id="adm-news"></table>
+      </div>
+    </section>
+  </div>
+
+  <dialog id="adm-dialog">
+    <form method="dialog" id="adm-form">
+      <h2 id="adm-d-title"></h2>
+      <p class="soft" id="adm-d-text"></p>
+      <label class="fld" id="adm-d-confirm-wrap" hidden>Type the account's email address to confirm<input type="text" id="adm-d-confirm" autocomplete="off"></label>
+      <label class="fld">Reason (kept in the audit log)<textarea id="adm-d-reason" rows="3" maxlength="500"></textarea></label>
+      <p class="form-msg err" id="adm-d-err"></p>
+      <div class="btn-row"><button class="btn btn-primary" value="ok" id="adm-d-ok">Confirm</button><button class="btn btn-ghost" value="cancel" formnovalidate>Cancel</button></div>
+    </form>
+  </dialog>
+</div>

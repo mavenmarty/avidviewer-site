@@ -22,6 +22,7 @@ import {
 } from '@simplewebauthn/server';
 import { isoBase64URL } from '@simplewebauthn/server/helpers';
 import { mailConfigured, sendMail } from './mail.js';
+import { handleAdminApi } from './admin.js';
 import { linkLookup, linkApprove, linkSetupToken, devicesFor, deviceRename, deviceRemove } from './devices.js';
 
 const LINK_TTL = 15 * 60 * 1000;
@@ -75,7 +76,7 @@ export async function currentUser(request, env) {
   const hash = await sha256hex(token);
   const now = Date.now();
   const row = await env.DB.prepare(
-    `SELECT s.token_hash, s.last_seen, u.id, u.email, u.created_at, u.role, u.status, u.watch_history
+    `SELECT s.token_hash, s.last_seen, s.method AS session_method, s.created_at AS session_started, u.id, u.email, u.created_at, u.role, u.status, u.watch_history
        FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ?1 AND s.expires_at > ?2`
   ).bind(hash, now).first();
   if (!row || row.status !== 'active') return null;
@@ -90,12 +91,12 @@ function isAdminEmail(env, email) {
   return String(env.ADMIN_EMAILS || '').toLowerCase().split(',').map((s) => s.trim()).filter(Boolean).includes(email);
 }
 
-async function startSession(request, env, userId) {
+async function startSession(request, env, userId, method = 'link') {
   const token = randomToken();
   const now = Date.now();
   await env.DB.prepare(
-    'INSERT INTO sessions (token_hash, user_id, created_at, expires_at, last_seen, label) VALUES (?1, ?2, ?3, ?4, ?3, ?5)'
-  ).bind(await sha256hex(token), userId, now, now + SESSION_TTL, labelFor(request.headers.get('user-agent') || '')).run();
+    'INSERT INTO sessions (token_hash, user_id, created_at, expires_at, last_seen, label, method) VALUES (?1, ?2, ?3, ?4, ?3, ?5, ?6)'
+  ).bind(await sha256hex(token), userId, now, now + SESSION_TTL, labelFor(request.headers.get('user-agent') || ''), method).run();
   await env.DB.prepare('UPDATE users SET last_sign_in = ?1 WHERE id = ?2').bind(new Date(now).toISOString(), userId).run();
   return sessionCookie(token, SESSION_TTL / 1000);
 }
@@ -143,11 +144,17 @@ async function emailLink(request, env, url) {
   if ((perEmail?.n || 0) >= LINKS_PER_EMAIL || (perIp?.n || 0) >= LINKS_PER_IP) {
     return json({ error: 'Too many sign-in links were asked for. Please wait a few minutes, then try again.' }, 429);
   }
+  return sendSignInLink(env, url, email, typeof b.next === 'string' ? b.next : '', ipHash, dev);
+}
+
+/** Makes a one-time sign-in link and emails it (or, in local development, returns it). Also used by the admin view. */
+export async function sendSignInLink(env, url, email, nextPath = '', ipHash = null, dev = env.DEV_SHOW_LINKS === '1') {
+  const now = Date.now();
   const token = randomToken();
   await env.DB.prepare('INSERT INTO sign_in_links (token_hash, email, created_at, expires_at, ip_hash) VALUES (?1, ?2, ?3, ?4, ?5)')
     .bind(await sha256hex(token), email, now, now + LINK_TTL, ipHash).run();
   // Where to go after signing in (e.g. /link/?c=… when linking a TV): a path on this site only.
-  const next = typeof b.next === 'string' && /^\/(?!\/)[\w\-\/?=&.%]*$/.test(b.next) ? b.next : '';
+  const next = /^\/(?!\/)[\w\-\/?=&.%]*$/.test(nextPath) ? nextPath : '';
   const link = `${url.origin}/signin/#t=${token}` + (next ? `&next=${encodeURIComponent(next)}` : '');
 
   if (mailConfigured(env)) {
@@ -266,7 +273,7 @@ async function passkeyLoginVerify(request, env, url) {
   if (!v.verified) return json({ error: "That passkey couldn't be checked. Please try again." }, 400);
   if (pk.status !== 'active') return json({ error: 'This account is suspended. Contact support@avidviewer.app.' }, 403);
   await env.DB.prepare('UPDATE passkeys SET counter = ?1, last_used = ?2 WHERE id = ?3').bind(v.authenticationInfo.newCounter, Date.now(), pk.id).run();
-  const cookie = await startSession(request, env, pk.user_id);
+  const cookie = await startSession(request, env, pk.user_id, 'passkey');
   return json({ ok: true }, 200, { 'set-cookie': cookie });
 }
 
@@ -280,6 +287,7 @@ async function me(env, user) {
     email: user.email,
     createdAt: user.created_at,
     admin: user.role === 'admin',
+    adminReady: user.role === 'admin' && user.session_method === 'passkey',
     watchHistory: Boolean(user.watch_history),
     devices: await devicesFor(env, user.id),
     passkeys: passkeys.results.map((p) => ({ id: p.id, name: p.name, createdAt: p.created_at, lastUsed: p.last_used })),
@@ -334,14 +342,14 @@ export async function handleAccountApi(request, env, realUrl) {
   // address the browser really uses, for links, the Origin check and passkeys. Unset in production.
   const url = env.SITE_ORIGIN ? new URL(realUrl.pathname + realUrl.search, env.SITE_ORIGIN) : realUrl;
   const p = url.pathname;
-  if (!(p.startsWith('/api/auth/') || p === '/api/me' || p.startsWith('/api/account/') || p.startsWith('/api/passkeys/') || p.startsWith('/api/link/'))) return null;
+  if (!(p.startsWith('/api/auth/') || p === '/api/me' || p.startsWith('/api/account/') || p.startsWith('/api/passkeys/') || p.startsWith('/api/link/') || p.startsWith('/api/admin/'))) return null;
 
   if (request.method === 'POST') {
     // Only this site's own pages may post here (with SameSite=Lax cookies, this stops cross-site form posts).
     // (wrangler dev rewrites the Origin header to the real site's address, so that one is accepted locally too.)
     const origin = request.headers.get('origin');
     if (origin !== url.origin && origin !== realUrl.origin) return json({ error: 'Not allowed.' }, 403);
-  } else if (!(request.method === 'GET' && p === '/api/me')) {
+  } else if (!(request.method === 'GET' && (p === '/api/me' || p.startsWith('/api/admin/')))) {
     return json({ error: 'Use POST.' }, 405);
   }
 
@@ -358,6 +366,7 @@ export async function handleAccountApi(request, env, realUrl) {
     return json({ ok: true }, 200, { 'set-cookie': sessionCookie('', 0) });
   }
   if (!user) return json({ error: 'Please sign in.' }, 401);
+  if (p.startsWith('/api/admin/')) return handleAdminApi(request, env, url, user);
 
   switch (p) {
     case '/api/me': return me(env, user);

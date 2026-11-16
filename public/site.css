@@ -214,3 +214,31 @@ button.btn-ghost { background: transparent; color: var(--text); }
 /* ---------- /link/ and Your TVs ---------- */
 .code-input { font-family: var(--display); font-size: 28px !important; letter-spacing: 0.12em; text-transform: uppercase; }
 .rows li input.rename { background: var(--card-2); border: 1px solid var(--line-2); border-radius: 8px; color: var(--text); font: 15px var(--body); padding: 6px 10px; }
+
+/* ---------- /admin/ ---------- */
+.admin .setup-card { max-width: none; }
+.adm-tabs { display: flex; gap: 6px; border-bottom: 1px solid var(--line); margin: 8px 0 20px; flex-wrap: wrap; }
+.adm-tabs button { background: none; border: 0; border-bottom: 2px solid transparent; color: var(--soft); font: 600 15px var(--body); padding: 10px 14px; cursor: pointer; }
+.adm-tabs button[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); }
+.adm-stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; margin-bottom: 20px; }
+.adm-stat { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 2px; }
+.adm-stat .n { font: 600 28px var(--display); color: var(--text); }
+.adm-stat .l { font-size: 13px; color: var(--soft); }
+.adm-two { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: start; padding-bottom: 60px; }
+.adm-two.wide-right { grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); }
+@media (max-width: 900px) { .adm-two, .adm-two.wide-right { grid-template-columns: 1fr; } }
+.adm-bars { display: flex; align-items: flex-end; gap: 3px; height: 140px; }
+.adm-bars .bar { flex: 1; background: var(--accent); border-radius: 3px 3px 0 0; min-height: 2px; opacity: 0.85; }
+.adm-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.adm-table th { text-align: left; color: var(--muted); font-weight: 600; padding: 8px 6px; border-bottom: 1px solid var(--line); }
+.adm-table td { padding: 9px 6px; border-bottom: 1px solid var(--line); color: var(--soft); vertical-align: top; word-break: break-word; }
+.adm-table.clickable tr:not(:first-child) { cursor: pointer; }
+.adm-table.clickable tr:not(:first-child):hover td, .adm-table.clickable tr:focus td { background: var(--card-2); color: var(--text); }
+.adm-search { display: flex; gap: 10px; margin-bottom: 14px; }
+.adm-search input, .adm-search select, .adm-note textarea, #adm-dialog textarea, #adm-dialog input { background: var(--card-2); border: 1px solid var(--line-2); border-radius: 10px; color: var(--text); font: 15px var(--body); padding: 10px 12px; }
+.adm-search input { flex: 1; }
+.admin h3 { font-size: 16px; margin: 18px 0 4px; }
+.adm-note { display: flex; flex-direction: column; gap: 8px; }
+#adm-dialog { background: var(--card); color: var(--text); border: 1px solid var(--line-2); border-radius: 16px; padding: 24px; max-width: 520px; width: 92vw; }
+#adm-dialog::backdrop { background: rgba(0, 0, 0, 0.6); }
+#adm-dialog form { display: flex; flex-direction: column; gap: 14px; }
