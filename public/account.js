@@ -73,22 +73,24 @@
     fetch('/api/me', { credentials: 'same-origin' }).then(function (r) {
       if (r.status === 401) { location.href = '/signin/?next=' + encodeURIComponent('/link/' + (pre ? '?c=' + pre : '')); return; }
       return r.json().then(function (me) {
-        document.getElementById('link-who').textContent = 'The device will be linked to ' + me.email + '.';
+        document.getElementById('link-who').textContent = 'The device will be added to ' + me.email + '.';
         lf.hidden = false;
-        if (pre) { codeIn.value = pre.toUpperCase(); lookup(); } else codeIn.focus();
+        if (pre) { codeIn.value = pretty(pre); document.getElementById('link-intro').textContent = 'The code from your device\'s QR code is filled in. Check the device below and choose Add this device.'; lookup(); } else codeIn.focus();
       });
     });
-    function reset() { found = null; document.getElementById('link-found').hidden = true; document.getElementById('link-go').textContent = 'Find the device'; }
-    codeIn.addEventListener('input', reset);
+    function pretty(v) { var c = String(v).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8); return c.length > 4 ? c.slice(0, 4) + '-' + c.slice(4) : c; }
+    function reset() { found = null; document.getElementById('link-found').hidden = true; document.getElementById('link-go').textContent = 'Find my device'; }
+    codeIn.addEventListener('input', function () { var v = pretty(codeIn.value); if (v !== codeIn.value) codeIn.value = v; reset(); if (v.length === 9) lookup(); });
     function lookup() {
       say(lmsg, 'Looking for the device…');
       post('/api/link/lookup', { code: codeIn.value }).then(function (d) {
-        if (!d._ok) { say(lmsg, d.error || "That code wasn't found.", true); return; }
+        if (!d._ok) { say(lmsg, d.error || "That code wasn't found. Check the code on the device; a code works for 10 minutes, and the welcome screen shows a new one when it runs out.", true); return; }
         found = d; say(lmsg, '');
         document.getElementById('link-tv').textContent = 'Found: ' + ([d.model, d.appVersion ? 'Avid Viewer ' + d.appVersion : ''].filter(Boolean).join(' · ') || 'a device');
         document.getElementById('link-name').value = d.name || '';
         document.getElementById('link-found').hidden = false;
-        document.getElementById('link-go').textContent = 'Link this device';
+        document.getElementById('link-go').textContent = 'Add this device';
+        document.getElementById('link-name').focus();
       });
     }
     lf.addEventListener('submit', function (e) {

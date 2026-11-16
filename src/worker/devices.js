@@ -166,6 +166,7 @@ async function tvBackupUpload(request, env) {
   let head;
   try { head = JSON.parse(data); } catch { head = null; }
   if (!head || head.avidViewerBackup !== 1 || typeof head.data !== 'string') return json({ error: "That isn't an Avid Viewer backup." }, 400);
+  await expireBackups(env); // removed devices' backups older than 30 days, account-wide (no cron needed)
   const pin = typeof b?.pin === 'string' && /^[0-9]{4,12}$/.test(b.pin) ? b.pin : null;
   if (!pin) return json({ error: 'Send the backup PIN with the backup.' }, 400);
   let pinEnc;

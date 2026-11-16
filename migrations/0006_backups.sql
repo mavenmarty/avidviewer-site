@@ -2,7 +2,7 @@
 -- The data is the TV's .avbak file, encrypted on the TV with the backup PIN chosen at the first backup.
 -- The PIN is kept too (pin_enc, AES-GCM with the BACKUP_PIN_KEY secret), so the person can look it up on their Account page.
 -- A device removed from the account keeps its last backup for 30 days (so a replacement can restore it), then it's deleted
--- by the daily cron in src/worker/index.js (or sooner, by the person).
+-- whenever any device uploads a backup or the account's backups are listed (or sooner, by the person).
 CREATE TABLE IF NOT EXISTS backups (
   device_id    TEXT PRIMARY KEY,
   user_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,

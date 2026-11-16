@@ -1,5 +1,4 @@
 // avidviewer.app: serves the static site and the small /api it needs.
-import { expireBackups } from './devices.js';
 import { handleAccountApi } from './auth.js';
 import { handleTvApi } from './devices.js';
 
@@ -146,10 +145,5 @@ export default {
     }
 
     return env.ASSETS.fetch(request);
-  },
-
-  // Daily (wrangler.toml [triggers]): a removed device's backup is kept 30 days, then deleted.
-  async scheduled(event, env, ctx) {
-    ctx.waitUntil(expireBackups(env));
   },
 };
