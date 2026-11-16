@@ -57,7 +57,6 @@ ${body}
   <div class="wrap">
     <nav aria-label="Footer">
       <a href="/guide/">User guide</a>
-      <a href="https://github.com/mavenmarty/avid-viewer/releases/download/user-guide/AvidViewer-User-Guide.pdf">Guide (PDF)</a>
       <a href="/releases/">What's new</a>
       <a href="/support/">Support</a>
       <a href="/privacy/">Privacy</a>
@@ -150,7 +149,7 @@ async function buildGuide() {
     description: 'How to install and use Avid Viewer on Android TV and Fire TV.',
     nav: 'guide', path: '/guide/',
     body: `<div class="wrap">
-<header class="page-head"><h1>User guide</h1><p>${v ? `For Avid Viewer ${esc(v)}. ` : ''}Also available as a <a href="https://github.com/mavenmarty/avid-viewer/releases/download/user-guide/AvidViewer-User-Guide.pdf">PDF</a>.</p></header>
+<header class="page-head"><h1>User guide</h1><p>${v ? `For Avid Viewer ${esc(v)}. ` : ''}Always the latest version. Need a copy on paper? <button type="button" class="linklike" onclick="window.print()">Print this guide</button>.</p></header>
 <div class="doc">
 <nav class="toc" aria-label="Guide contents">${tocHtml}</nav>
 <article class="prose">${guideHtml}</article>

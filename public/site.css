@@ -151,3 +151,21 @@ p { margin: 0; }
   .section { padding: 56px 0; }
   .hero { padding-top: 24px; gap: 36px; }
 }
+
+.linklike { background: none; border: 0; padding: 0; font: inherit; color: var(--accent); text-decoration: underline; cursor: pointer; }
+.linklike:hover { color: var(--accent-hi); }
+
+/* Printing the guide (or any page): light paper, no site chrome. */
+@media print {
+  :root { --text: #111; --soft: #222; --muted: #555; --line: #ccc; --card-2: #f4f4f4; --accent: #7a4a00; }
+  body { background: #fff; color: #111; }
+  .site-header, .site-footer, .toc, .skip, .linklike { display: none !important; }
+  .doc { display: block; padding: 0; }
+  .prose { max-width: none; color: #111; font-size: 11pt; }
+  .prose h2 { break-before: page; }
+  .prose h2:first-child { break-before: auto; }
+  .prose h2, .prose h3, .prose h4 { break-after: avoid; color: #111; }
+  .prose img { max-width: 75%; break-inside: avoid; border-color: #ccc; }
+  .prose a { color: #111; }
+  .page-head { border: 0; padding-top: 0; }
+}
