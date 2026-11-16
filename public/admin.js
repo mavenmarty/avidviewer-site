@@ -57,7 +57,7 @@
     get('/api/admin/stats').then(function (s) {
       var box = $('adm-stats'); box.innerHTML = '';
       [['Accounts', s.users], ['New, 7 days', s.new7], ['New, 30 days', s.new30], ['Signed in, 7 days', s.active7], ['Linked TVs', s.tvs],
-       ['TVs seen, 7 days', s.tvs7], ['With a passkey', s.passkeys], ['Suspended', s.suspended], ['Setup codes, 24 h', s.setupCodes24h], ['Launch news', s.launchNews]]
+       ['TVs seen, 7 days', s.tvs7], ['With a passkey', s.passkeys], ['Suspended', s.suspended], ['Setup codes, 24 h', s.setupCodes24h], ['Launch news', s.launchNews], ['Backups', s.backupCount], ['Backup storage', Math.round((s.backupBytes || 0) / 1024) + ' KB']]
         .forEach(function (k) { var c = el('div', 'adm-stat'); c.appendChild(el('span', 'n', String(k[1] || 0))); c.appendChild(el('span', 'l', k[0])); box.appendChild(c); });
       var bars = $('adm-daily'); bars.innerHTML = '';
       var byDay = {}; (s.daily || []).forEach(function (d) { byDay[d.day] = d.n; });
@@ -114,6 +114,7 @@
       if (!d.sessions.length) ss.appendChild(el('li', 'soft', 'None.'));
       d.sessions.forEach(function (s) { var li = el('li'); li.appendChild(el('span', null, s.label || 'A browser')); li.appendChild(el('span', 'soft', (s.method === 'passkey' ? 'passkey' : 'email link') + ' · signed in ' + when(s.createdAt) + ' · last active ' + when(s.lastSeen))); ss.appendChild(li); });
       box.appendChild(ss);
+      box.appendChild(el('p', 'soft', 'Backups: ' + (d.backups.length ? d.backups.map(function (x) { return x.name + (x.removed ? ' (removed TV)' : '') + ', ' + when(x.createdAt) + ', ' + Math.max(1, Math.round(x.size / 1024)) + ' KB'; }).join('; ') : 'none')));
       box.appendChild(el('p', 'soft', 'Passkeys: ' + (d.passkeys.length ? d.passkeys.map(function (p) { return p.name; }).join(', ') : 'none')));
 
       box.appendChild(el('h3', null, 'Notes'));

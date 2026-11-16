@@ -8,6 +8,7 @@
 // An admin can't suspend, delete or sign out their own account here (use the Account page for your own).
 
 import { json, body, randomToken, sendSignInLink } from './auth.js';
+import { backupsFor } from './devices.js';
 
 const DAY = 24 * 3600 * 1000;
 
@@ -42,13 +43,15 @@ async function stats(env) {
   const passkeys = await one('SELECT COUNT(DISTINCT user_id) AS n FROM passkeys');
   const setupCodes24h = await one("SELECT COUNT(*) AS n FROM setup_codes WHERE created_at > ?1", iso(now - DAY));
   const launchNews = await one('SELECT COUNT(*) AS n FROM signups');
+  const backupCount = await one('SELECT COUNT(*) AS n FROM backups');
+  const backupBytes = await one('SELECT COALESCE(SUM(size), 0) AS n FROM backups');
   const versions = (await env.DB.prepare(
     "SELECT COALESCE(app_version, 'unknown') AS v, COUNT(*) AS n FROM devices WHERE revoked_at IS NULL GROUP BY v ORDER BY n DESC LIMIT 12"
   ).all()).results;
   const daily = (await env.DB.prepare(
     'SELECT substr(created_at, 1, 10) AS day, COUNT(*) AS n FROM users WHERE created_at > ?1 GROUP BY day ORDER BY day'
   ).bind(iso(now - 30 * DAY)).all()).results;
-  return json({ users, new7, new30, active7, suspended, tvs, tvs7, passkeys, setupCodes24h, launchNews, versions, daily });
+  return json({ users, new7, new30, active7, suspended, tvs, tvs7, passkeys, setupCodes24h, launchNews, backupCount, backupBytes, versions, daily });
 }
 
 async function users(env, url) {
@@ -83,6 +86,7 @@ async function userDetail(env, url) {
     sessions: sessions.filter((s) => s.expires_at > Date.now()).map((s) => ({ label: s.label, method: s.method, createdAt: s.created_at, lastSeen: s.last_seen })),
     passkeys: passkeys.map((p) => ({ name: p.name, createdAt: p.created_at, lastUsed: p.last_used })),
     notes: notes.map((n) => ({ by: n.admin_email, at: n.at, text: n.text })),
+    backups: (await backupsFor(env, u.id)).map((x) => ({ name: x.name, createdAt: x.createdAt, size: x.size, removed: x.removed })),
     log: log.map((a) => ({ at: a.at, by: a.admin_email, action: a.action, detail: a.detail, reason: a.reason })),
   });
 }
@@ -175,6 +179,7 @@ async function deleteUser(request, env, admin) {
     env.DB.prepare('DELETE FROM sessions WHERE user_id = ?1').bind(u.id),
     env.DB.prepare('DELETE FROM passkeys WHERE user_id = ?1').bind(u.id),
     env.DB.prepare('DELETE FROM webauthn_challenges WHERE user_id = ?1').bind(u.id),
+    env.DB.prepare('DELETE FROM backups WHERE user_id = ?1').bind(u.id),
     env.DB.prepare('DELETE FROM devices WHERE user_id = ?1').bind(u.id),
     env.DB.prepare('DELETE FROM link_codes WHERE user_id = ?1').bind(u.id),
     env.DB.prepare('DELETE FROM admin_notes WHERE user_id = ?1').bind(u.id),

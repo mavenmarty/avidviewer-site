@@ -131,6 +131,31 @@
       });
       li.appendChild(rn); li.appendChild(rm); tv.appendChild(li);
     });
+    var bk = document.getElementById('backups'); bk.innerHTML = '';
+    if (!me.backups.length) bk.appendChild(el('li', 'soft', 'No backups yet. Turn them on in Avid Viewer › Settings › Updates & about on a linked TV.'));
+    me.backups.forEach(function (x) {
+      var li = el('li'); li.appendChild(el('span', null, x.name + (x.removed ? ' (removed TV)' : '')));
+      li.appendChild(el('span', 'soft', ['backed up ' + when(x.createdAt), x.playlists != null ? x.playlists + ' playlist' + (x.playlists === 1 ? '' : 's') : '', Math.max(1, Math.round(x.size / 1024)) + ' KB'].filter(Boolean).join(' · ')));
+      var pinOut = el('strong', 'pin-out');
+      var show = el('button', 'linkish', 'Show PIN'); show.type = 'button';
+      show.addEventListener('click', function () {
+        if (pinOut.textContent) { pinOut.textContent = ''; show.textContent = 'Show PIN'; return; }
+        fetch('/api/account/backups/pin', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ deviceId: x.deviceId }) })
+          .then(function (r) { return r.json(); })
+          .then(function (o) {
+            if (o.pin) { pinOut.textContent = 'PIN ' + o.pin; show.textContent = 'Hide PIN'; return; }
+            if (o.signIn) { if (confirm(o.error + ' Sign in now?')) location.href = '/signin/?next=' + encodeURIComponent('/account/'); return; }
+            alert(o.error || 'The PIN could not be shown.');
+          });
+      });
+      li.appendChild(show); li.appendChild(pinOut);
+      var del = el('button', 'linkish', 'Delete'); del.type = 'button';
+      del.addEventListener('click', function () {
+        if (!confirm('Delete the backup from "' + x.name + '"? It can\'t be undone. If that TV is still linked and backups are on, it makes a new one within a day.')) return;
+        post('/api/account/backups/delete', { deviceId: x.deviceId }).then(load);
+      });
+      li.appendChild(del); bk.appendChild(li);
+    });
     var pk = document.getElementById('passkeys'); pk.innerHTML = '';
     if (!me.passkeys.length) pk.appendChild(el('li', 'soft', 'No passkeys yet.'));
     me.passkeys.forEach(function (p) {

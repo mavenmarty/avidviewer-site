@@ -132,6 +132,87 @@ async function tvMe(request, env) {
   return json({ email: d.email, name: d.name, deviceId: d.id });
 }
 
+// ---------------------------------------------------------------- cloud backups (TV side)
+
+const BACKUP_MAX = 1_000_000; // characters of .avbak text
+
+/** The backup PIN at rest: AES-256-GCM with a key from the BACKUP_PIN_KEY secret, so a copy of the database alone can't open backups. */
+async function pinKey(env) {
+  if (!env.BACKUP_PIN_KEY) throw new Error('BACKUP_PIN_KEY is not set');
+  const raw = await crypto.subtle.digest('SHA-256', new TextEncoder().encode('avidviewer-backup-pin:v1:' + env.BACKUP_PIN_KEY));
+  return crypto.subtle.importKey('raw', raw, 'AES-GCM', false, ['encrypt', 'decrypt']);
+}
+const b64 = (u8) => btoa(String.fromCharCode(...u8));
+const unb64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
+async function sealPin(env, pin) {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, await pinKey(env), new TextEncoder().encode(pin)));
+  const out = new Uint8Array(12 + ct.length); out.set(iv); out.set(ct, 12);
+  return b64(out);
+}
+async function openPin(env, sealed) {
+  const all = unb64(sealed);
+  return new TextDecoder().decode(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: all.slice(0, 12) }, await pinKey(env), all.slice(12)));
+}
+
+/** POST /api/tv/backup {data}: this TV's backup, replacing its previous one. */
+async function tvBackupUpload(request, env) {
+  const d = await deviceFor(request, env);
+  if (!d) return json({ error: 'This TV is not linked.' }, 401);
+  if (d.status !== 'active') return json({ error: 'This account is suspended.' }, 403);
+  const b = await body(request);
+  const data = typeof b?.data === 'string' ? b.data : '';
+  if (!data || data.length > BACKUP_MAX) return json({ error: data ? 'This backup is too big to keep (over 1 MB).' : 'No backup was sent.' }, 400);
+  let head;
+  try { head = JSON.parse(data); } catch { head = null; }
+  if (!head || head.avidViewerBackup !== 1 || typeof head.data !== 'string') return json({ error: "That isn't an Avid Viewer backup." }, 400);
+  const pin = typeof b?.pin === 'string' && /^[0-9]{4,12}$/.test(b.pin) ? b.pin : null;
+  if (!pin) return json({ error: 'Send the backup PIN with the backup.' }, 400);
+  let pinEnc;
+  try { pinEnc = await sealPin(env, pin); } catch { return json({ error: "Backups aren't switched on yet. Try again later." }, 503); }
+  const now = Date.now();
+  const dev = await env.DB.prepare('SELECT name, model, app_version FROM devices WHERE id = ?1').bind(d.id).first();
+  await env.DB.prepare(
+    `INSERT INTO backups (device_id, user_id, device_name, device_model, app_version, created_at, uploaded_at, size, playlists, data, pin_enc)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+     ON CONFLICT(device_id) DO UPDATE SET user_id = ?2, device_name = ?3, device_model = ?4, app_version = ?5, created_at = ?6,
+       uploaded_at = ?7, size = ?8, playlists = ?9, data = ?10, pin_enc = ?11`
+  ).bind(d.id, d.user_id, dev?.name || 'TV', dev?.model || null, clip(head.appVersion, 30) || dev?.app_version || null,
+    Number(head.created) || now, now, data.length, Array.isArray(head.playlistNames) ? head.playlistNames.length : null, data, pinEnc).run();
+  return json({ ok: true, uploadedAt: now });
+}
+
+/** The account's backups, newest first (no data). */
+export async function backupsFor(env, userId, thisDevice = null) {
+  const r = await env.DB.prepare(
+    `SELECT b.device_id, b.device_name, b.device_model, b.app_version, b.created_at, b.uploaded_at, b.size, b.playlists,
+            (d.revoked_at IS NOT NULL OR d.id IS NULL) AS removed
+       FROM backups b LEFT JOIN devices d ON d.id = b.device_id WHERE b.user_id = ?1 ORDER BY b.created_at DESC`
+  ).bind(userId).all();
+  return r.results.map((x) => ({
+    deviceId: x.device_id, name: x.device_name, model: x.device_model, appVersion: x.app_version, createdAt: x.created_at,
+    uploadedAt: x.uploaded_at, size: x.size, playlists: x.playlists, removed: Boolean(x.removed), thisTv: x.device_id === thisDevice,
+  }));
+}
+
+async function tvBackupList(request, env) {
+  const d = await deviceFor(request, env);
+  if (!d) return json({ error: 'This TV is not linked.' }, 401);
+  if (d.status !== 'active') return json({ error: 'This account is suspended.' }, 403);
+  return json({ backups: await backupsFor(env, d.user_id, d.id) });
+}
+
+/** GET /api/tv/backup?device=<id>: one of the account's backups, to restore. */
+async function tvBackupDownload(request, env, url) {
+  const d = await deviceFor(request, env);
+  if (!d) return json({ error: 'This TV is not linked.' }, 401);
+  if (d.status !== 'active') return json({ error: 'This account is suspended.' }, 403);
+  const row = await env.DB.prepare('SELECT data FROM backups WHERE device_id = ?1 AND user_id = ?2')
+    .bind(url.searchParams.get('device') || d.id, d.user_id).first();
+  if (!row) return json({ error: 'That backup is no longer in your account.' }, 404);
+  return json({ data: row.data });
+}
+
 async function tvSignout(request, env) {
   const d = await deviceFor(request, env);
   if (d) await env.DB.prepare('UPDATE devices SET revoked_at = ?1 WHERE id = ?2').bind(Date.now(), d.id).run();
@@ -144,12 +225,15 @@ export async function handleTvApi(request, env, realUrl) {
   const p = url.pathname;
   if (!p.startsWith('/api/tv/')) return null;
   if (p === '/api/tv/me') return request.method === 'GET' ? tvMe(request, env) : json({ error: 'Use GET.' }, 405);
+  if (p === '/api/tv/backups') return request.method === 'GET' ? tvBackupList(request, env) : json({ error: 'Use GET.' }, 405);
+  if (p === '/api/tv/backup' && request.method === 'GET') return tvBackupDownload(request, env, url);
   if (request.method !== 'POST') return json({ error: 'Use POST.' }, 405);
   switch (p) {
     case '/api/tv/link/start': return tvStart(request, env, url);
     case '/api/tv/link/poll': return tvPoll(request, env);
     case '/api/tv/link/claim': return tvClaim(request, env);
     case '/api/tv/signout': return tvSignout(request, env);
+    case '/api/tv/backup': return tvBackupUpload(request, env);
   }
   return json({ error: 'Not found.' }, 404);
 }
@@ -209,4 +293,24 @@ export async function deviceRemove(request, env, user) {
   await env.DB.prepare('UPDATE devices SET revoked_at = ?1 WHERE id = ?2 AND user_id = ?3 AND revoked_at IS NULL')
     .bind(Date.now(), String(b?.id || ''), user.id).run();
   return json({ ok: true });
+}
+
+export async function backupDelete(request, env, user) {
+  const b = await body(request);
+  await env.DB.prepare('DELETE FROM backups WHERE device_id = ?1 AND user_id = ?2').bind(String(b?.deviceId || ''), user.id).run();
+  return json({ ok: true });
+}
+
+/**
+ * POST /api/account/backups/pin {deviceId}: the PIN of one of your backups. Shown only to a sign-in from the last hour
+ * or a passkey sign-in, because with the PIN the backup opens (it holds provider logins).
+ */
+export async function backupPin(request, env, user) {
+  const fresh = user.session_method === 'passkey' || Date.now() - Number(user.session_started || 0) < 60 * 60 * 1000;
+  if (!fresh) return json({ error: 'For your security, sign in again (or use a passkey) to see a backup PIN.', signIn: true }, 403);
+  const b = await body(request);
+  const row = await env.DB.prepare('SELECT pin_enc FROM backups WHERE device_id = ?1 AND user_id = ?2').bind(String(b?.deviceId || ''), user.id).first();
+  if (!row) return json({ error: 'That backup is no longer in your account.' }, 404);
+  if (!row.pin_enc) return json({ error: "This backup's PIN wasn't saved." }, 404);
+  try { return json({ pin: await openPin(env, row.pin_enc) }); } catch { return json({ error: "The PIN couldn't be read. Make a new backup on the TV." }, 500); }
 }

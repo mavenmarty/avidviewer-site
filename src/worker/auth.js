@@ -23,7 +23,7 @@ import {
 import { isoBase64URL } from '@simplewebauthn/server/helpers';
 import { mailConfigured, sendMail } from './mail.js';
 import { handleAdminApi } from './admin.js';
-import { linkLookup, linkApprove, linkSetupToken, devicesFor, deviceRename, deviceRemove } from './devices.js';
+import { linkLookup, linkApprove, linkSetupToken, devicesFor, deviceRename, deviceRemove, backupsFor, backupDelete, backupPin } from './devices.js';
 
 const LINK_TTL = 15 * 60 * 1000;
 const SESSION_TTL = 30 * 24 * 3600 * 1000;
@@ -290,6 +290,7 @@ async function me(env, user) {
     adminReady: user.role === 'admin' && user.session_method === 'passkey',
     watchHistory: Boolean(user.watch_history),
     devices: await devicesFor(env, user.id),
+    backups: await backupsFor(env, user.id),
     passkeys: passkeys.results.map((p) => ({ id: p.id, name: p.name, createdAt: p.created_at, lastUsed: p.last_used })),
     sessions: sessions.results.map((s) => ({
       id: s.token_hash.slice(0, 16), label: s.label || 'A browser', createdAt: s.created_at, lastSeen: s.last_seen,
@@ -326,6 +327,7 @@ async function deleteAccount(request, env, user) {
     env.DB.prepare('DELETE FROM sessions WHERE user_id = ?1').bind(user.id),
     env.DB.prepare('DELETE FROM passkeys WHERE user_id = ?1').bind(user.id),
     env.DB.prepare('DELETE FROM webauthn_challenges WHERE user_id = ?1').bind(user.id),
+    env.DB.prepare('DELETE FROM backups WHERE user_id = ?1').bind(user.id),
     env.DB.prepare('DELETE FROM devices WHERE user_id = ?1').bind(user.id),
     env.DB.prepare('DELETE FROM link_codes WHERE user_id = ?1').bind(user.id),
     env.DB.prepare('DELETE FROM sign_in_links WHERE email = ?1').bind(user.email),
@@ -375,6 +377,8 @@ export async function handleAccountApi(request, env, realUrl) {
     case '/api/account/delete': return deleteAccount(request, env, user);
     case '/api/account/devices/rename': return deviceRename(request, env, user);
     case '/api/account/devices/remove': return deviceRemove(request, env, user);
+    case '/api/account/backups/delete': return backupDelete(request, env, user);
+    case '/api/account/backups/pin': return backupPin(request, env, user);
     case '/api/link/lookup': return linkLookup(request, env);
     case '/api/link/approve': return linkApprove(request, env, user);
     case '/api/link/setup-token': return linkSetupToken(env, user);

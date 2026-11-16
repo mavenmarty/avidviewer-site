@@ -127,8 +127,13 @@
     var button = form.querySelector('button[type="submit"]');
     msg.className = 'form-msg'; msg.textContent = '';
     var payload;
+    if (mode() === 'backup' && !signedIn) {
+      fail('Restoring a backup needs your Avid Viewer account.');
+      var a = document.createElement('a'); a.href = '/signin/?next=' + encodeURIComponent('/setup/'); a.textContent = ' Sign in first'; msg.appendChild(a);
+      return;
+    }
     try { payload = await collect(); } catch (err) { fail(err.message); return; }
-    if (signedIn && document.getElementById('link-account').checked) {
+    if (signedIn && (mode() === 'backup' || document.getElementById('link-account').checked)) {
       var lt = await fetch('/api/link/setup-token', { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin', body: '{}' })
         .then(function (r) { return r.ok ? r.json() : {}; }).catch(function () { return {}; });
       if (lt.linkToken) payload.link = lt.linkToken;
