@@ -1,7 +1,7 @@
 name = "avidviewer-site"
 main = "src/worker/index.js"
 compatibility_date = "2026-11-01"
-workers_dev = true
+workers_dev = false
 
 # Static site built by build.mjs. The Worker runs first so it can redirect www and answer /api.
 [assets]
