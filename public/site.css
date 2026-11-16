@@ -71,6 +71,11 @@ p { margin: 0; }
 .tv-row .ch { flex: 0 0 76px; background: var(--card-2); color: var(--soft); }
 .tv-row .now { background: var(--accent); color: var(--accent-ink); }
 
+.hero-art { margin: 0; display: flex; flex-direction: column; gap: 10px; }
+.caption { font-size: 12px; color: var(--muted); text-align: center; }
+.notice { margin: 0 0 72px; background: var(--card-2); border: 1px solid var(--line-2); border-radius: 14px; padding: 18px 22px; font-size: 15px; line-height: 1.55; color: var(--soft); }
+.notice strong { color: var(--text); margin-right: 4px; }
+
 /* cards */
 .card { flex: 1 1 320px; min-width: 0; background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 28px; display: flex; flex-direction: column; gap: 10px; }
 .card h3 { font-size: 22px; }
