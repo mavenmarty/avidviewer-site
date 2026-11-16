@@ -44,7 +44,6 @@ function layout({ title, description, nav, path, body, scripts = '' }) {
       <a href="/#features">Features</a>
       <a href="/#devices">Devices</a>
       <a href="/guide/"${cur('guide')}>User guide</a>
-      <a href="/releases/"${cur('releases')}>What's new</a>
       <a href="/support/"${cur('support')}>Support</a>
       <a href="/account/"${cur('account')}>Account</a>
       <a class="btn btn-primary" href="/#notify">Get launch news</a>
