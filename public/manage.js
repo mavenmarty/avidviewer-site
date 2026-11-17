@@ -327,7 +327,7 @@
     if (t.status === 'needs_login') return 'waiting for the login';
     if (t.status === 'needs_update') return 'needs Avid Viewer 1.15.0';
     if (t.status === 'failed') return 'couldn\'t add it: ' + friendly(t.error);
-    if (t.status === 'waiting') return t.action === 'remove' ? 'removing at the next check-in' : 'waiting for the device to open';
+    if (t.status === 'waiting') return t.action === 'remove' ? 'still has it: removes it at its next check-in (Avid Viewer open)' : 'waiting for the device to open';
     return 'up to date';
   }
   function playlistsPage() {
@@ -337,15 +337,16 @@
     var t = el('table', 'mg-table');
     t.innerHTML = '<thead><tr><th>Playlist</th><th>Type</th><th>Profiles</th><th>On devices</th><th>In use</th><th></th></tr></thead>';
     var tb = el('tbody');
-    var shown = S.playlists.filter(function (p) { return !p.removing; });
+    var shown = S.playlists;
     if (!shown.length) { var r0 = el('tr'); var c0 = el('td', 'soft', 'No playlists yet. Add one, then give it to profiles.'); c0.colSpan = 6; tb.appendChild(add(r0, c0)); }
     shown.forEach(function (p) {
       var tr = el('tr');
-      var n = el('td'); add(n, el('strong', null, p.name + (p.removing ? ' (removing)' : '')), el('div', 'soft', catalogText(p)));
+      var n = el('td'); add(n, el('strong', null, p.name), p.removing ? el('span', 'mg-chip mg-removing', 'Removing') : null,
+        el('div', 'soft', p.removing ? 'Removed from your account. It leaves this list once every device below confirms it\'s gone.' : catalogText(p)));
       var chips = el('td');
       if (!p.profiles.length) chips.appendChild(el('span', 'soft', 'Not given to a profile yet'));
       p.profiles.forEach(function (id) { var q = prof(id); if (q) chips.appendChild(el('span', 'mg-chip' + (q.kids ? ' kids' : ''), q.name)); });
-      var live = p.targets.filter(function (x) { return x.action !== 'remove'; });
+      var live = p.removing ? p.targets : p.targets.filter(function (x) { return x.action !== 'remove'; });
       var wait = live.filter(function (x) { return x.status !== 'done'; });
       var dv = el('td', null, live.length ? live.length + (live.length === 1 ? ' device' : ' devices') : '—');
       live.forEach(function (x) { dv.appendChild(el('div', 'soft', (dev(x.deviceId) || {}).name + ': ' + targetText(x))); });
@@ -356,11 +357,6 @@
       tb.appendChild(tr);
     });
     add(b, add(t, tb));
-    // Removed playlists leave the list at once; a device that hasn't checked in since still has to drop its copy.
-    var going = S.playlists.filter(function (p) { return p.removing; });
-    if (going.length) add(b, el('p', 'fineprint', 'Removed from your account and still on a device until its next check-in: ' + going.map(function (p) {
-      return p.name + ' (' + names(p.targets.map(function (x) { return (dev(x.deviceId) || {}).name; }).filter(Boolean)) + ')';
-    }).join('; ') + '.'));
     add(b, tvPlaylists());
     add(b, el('p', 'fineprint', 'On devices counts the devices that have at least one profile with the playlist. Logins are never shown after they\'re saved: they\'re locked so only your passkey and your devices can open them. Avid Viewer is a media player and doesn\'t provide any content; add only playlists you have the rights to.'));
   }

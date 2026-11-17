@@ -313,3 +313,4 @@ button.btn-ghost { background: transparent; color: var(--text); }
 .mg-acts .linkish + .linkish { margin-left: 14px; }
 .linkish.mg-danger { color: #F2A79B; }
 .mg-banner h3 { font-size: 18px; color: var(--text); }
+.mg-chip.mg-removing { background: #3A2420; color: #F2A79B; margin-left: 8px; vertical-align: 2px; }
