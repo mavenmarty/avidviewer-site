@@ -1,19 +1,22 @@
-// Playlist management (Nov 16, 2026): playlists entered on avidviewer.app go to the devices and profiles the person picks.
+// Playlist management: playlists entered on avidviewer.app. Since 1.15.0 they go to profiles, and profiles go to devices
+// (profiles.js turns that into the rows below); devices on 1.14.0 keep what was sent to them directly.
 //
 // Device side (Bearer token):
-//   POST /api/tv/report     {pubkey, profiles:[{id,name,kids}]}  the device's public key and its profiles
-//   GET  /api/tv/inbox      what this device should add, change or remove
+//   POST /api/tv/report     {pubkey, profiles:[{id,name,kids}]} (1.14.0) or {v:2, …} (1.15.0: see profiles.js)
+//   GET  /api/tv/inbox?ph=  what this device should add, change or remove; and its profiles when their hash isn't ph
 //   POST /api/tv/inbox/ack  {playlistId, version, ok, error}
 // Account side (signed in):
-//   GET  /api/account/playlists          playlists with each device's status, and the devices with their profiles
-//   POST /api/account/playlists/save     {id?, name, type, targets:[{deviceId, profiles|null, payload?}]}
+//   POST /api/account/playlists/save     {id?, name, type, profiles:[ids], vault?, seals:[{deviceId, payload}]}
+//   POST /api/account/playlists/seal     {items:[{playlistId, deviceId, payload}]}  logins locked for devices waiting for them
 //   POST /api/account/playlists/remove   {id}
 //
 // payload = a sealed envelope made in the browser for one device: JSON {v:1, epk, iv, ct} — an ephemeral P-256 key,
 // ECDH with the device's key, HKDF-SHA256 (salt = epk, info "avidviewer-playlist:v1") → AES-256-GCM. The site can't open it.
+// vault = the login encrypted in the browser with the account's vault key (see profiles.js); the site can't open it either.
 
 import { json, body, randomToken } from './auth.js';
 import { deviceFor } from './devices.js';
+import { mergeDevice, deviceProfiles, reconcile, reportedProfilesFor, pendingLogins } from './profiles.js';
 
 const clip = (v, n) => (typeof v === 'string' ? v.trim().slice(0, n) : '');
 const PAYLOAD_MAX = 16_000;
@@ -38,20 +41,33 @@ async function tvReport(request, env) {
   if (!pubkey) return json({ error: 'Send the device key.' }, 400);
   await env.DB.prepare('UPDATE devices SET pubkey = ?1, profiles = ?2, reported_at = ?3 WHERE id = ?4')
     .bind(pubkey, JSON.stringify(cleanProfiles(b?.profiles)), Date.now(), d.id).run();
-  return json({ ok: true });
+  if (b?.v !== 2) return json({ ok: true });
+  // 1.15.0: the first report merges the device's profiles into the account.
+  if (d.managed_at) return json({ ok: true, managed: true, profileMap: {} });
+  const reported = Array.isArray(b?.profiles) ? b.profiles : [];
+  const map = await mergeDevice(env, d, reportedProfilesFor(reported), b?.visibility);
+  return json({ ok: true, managed: true, profileMap: map });
 }
 
-async function tvInbox(request, env) {
+async function tvInbox(request, env, url) {
   const [d, no] = await tvDevice(request, env); if (no) return no;
   const r = await env.DB.prepare(
     `SELECT t.playlist_id, t.action, t.payload, t.profiles, t.version, p.name, p.type FROM playlist_targets t
        JOIN account_playlists p ON p.id = t.playlist_id WHERE t.device_id = ?1 AND t.status = 'waiting' ORDER BY t.updated_at LIMIT 20`
   ).bind(d.id).all();
   await env.DB.prepare('UPDATE devices SET last_seen = ?1 WHERE id = ?2').bind(Date.now(), d.id).run();
-  return json({ items: r.results.map((x) => ({
+  const out = { items: r.results.map((x) => ({
     playlistId: x.playlist_id, action: x.action, version: x.version, name: x.name, type: x.type,
     profiles: x.profiles ? JSON.parse(x.profiles) : null, payload: x.payload ? JSON.parse(x.payload) : null,
-  })) });
+  })) };
+  if (d.managed_at) {
+    // The device's profiles (1.15.0), only when they changed since the hash it has.
+    const { list, hash } = await deviceProfiles(env, d.id);
+    out.managed = true;
+    out.profilesHash = hash;
+    if (url?.searchParams.get('ph') !== hash) out.profiles = list;
+  }
+  return json(out);
 }
 
 async function tvAck(request, env) {
@@ -74,47 +90,42 @@ async function tvAck(request, env) {
   return json({ ok: true });
 }
 
-export async function handlePlaylistTvApi(request, env, p) {
+export async function handlePlaylistTvApi(request, env, p, url) {
   if (p === '/api/tv/report' && request.method === 'POST') return tvReport(request, env);
-  if (p === '/api/tv/inbox' && request.method === 'GET') return tvInbox(request, env);
+  if (p === '/api/tv/inbox' && request.method === 'GET') return tvInbox(request, env, url);
   if (p === '/api/tv/inbox/ack' && request.method === 'POST') return tvAck(request, env);
   return null;
 }
 
 // ---------------------------------------------------------------- account side
 
-async function devicesWithKeys(env, userId) {
-  const r = await env.DB.prepare(
-    'SELECT id, name, model, app_version, pubkey, profiles, reported_at FROM devices WHERE user_id = ?1 AND revoked_at IS NULL ORDER BY name'
-  ).bind(userId).all();
-  return r.results.map((d) => ({ id: d.id, name: d.name, model: d.model, appVersion: d.app_version, pubkey: d.pubkey || null,
-    profiles: d.profiles ? JSON.parse(d.profiles) : [], reportedAt: d.reported_at }));
-}
-
-export async function playlistsList(env, user) {
-  // Devices removed from the account no longer count as targets.
-  await env.DB.prepare(`DELETE FROM playlist_targets WHERE user_id = ?1 AND device_id NOT IN
-    (SELECT id FROM devices WHERE user_id = ?1 AND revoked_at IS NULL)`).bind(user.id).run();
-  await env.DB.prepare(`DELETE FROM account_playlists WHERE user_id = ?1 AND removing = 1
-    AND id NOT IN (SELECT playlist_id FROM playlist_targets)`).bind(user.id).run();
-  const pls = await env.DB.prepare('SELECT id, name, type, created_at, updated_at, removing FROM account_playlists WHERE user_id = ?1 ORDER BY name')
-    .bind(user.id).all();
-  const ts = await env.DB.prepare('SELECT playlist_id, device_id, profiles, action, status, error, updated_at FROM playlist_targets WHERE user_id = ?1')
-    .bind(user.id).all();
-  return json({
-    devices: await devicesWithKeys(env, user.id),
-    playlists: pls.results.map((p) => ({
-      id: p.id, name: p.name, type: p.type, updatedAt: p.updated_at, removing: Boolean(p.removing),
-      targets: ts.results.filter((t) => t.playlist_id === p.id).map((t) => ({
-        deviceId: t.device_id, profiles: t.profiles ? JSON.parse(t.profiles) : null, action: t.action, status: t.status, error: t.error, updatedAt: t.updated_at,
-      })),
-    })),
-  });
-}
-
 function sealedOk(p) {
   return p && typeof p === 'object' && p.v === 1 && typeof p.epk === 'string' && typeof p.iv === 'string' && typeof p.ct === 'string'
     && JSON.stringify(p).length <= PAYLOAD_MAX;
+}
+const vaultOk = (v) => typeof v === 'string' && v.length <= PAYLOAD_MAX && /^[A-Za-z0-9+/=]{40,}$/.test(v);
+
+/** Puts sealed logins on this playlist's devices; [changed] = a new login, so every device on it needs the new one. */
+async function applySeals(env, userId, playlistId, seals, changed) {
+  const rows = (await env.DB.prepare('SELECT device_id, action, status FROM playlist_targets WHERE playlist_id = ?1 AND user_id = ?2')
+    .bind(playlistId, userId).all()).results;
+  const byDev = new Map();
+  for (const s of seals) if (sealedOk(s?.payload)) byDev.set(String(s.deviceId || ''), JSON.stringify(s.payload));
+  const now = Date.now();
+  const stmts = [];
+  for (const t of rows) {
+    if (t.action === 'remove' || t.status === 'needs_update') continue;
+    const sealed = byDev.get(t.device_id);
+    if (sealed) {
+      stmts.push(env.DB.prepare(`UPDATE playlist_targets SET payload = ?1, status = 'waiting', error = NULL, version = version + 1, updated_at = ?2
+        WHERE playlist_id = ?3 AND device_id = ?4`).bind(sealed, now, playlistId, t.device_id));
+    } else if (changed && t.status !== 'needs_login') {
+      // Keeps the old login until the new one is locked for this device.
+      stmts.push(env.DB.prepare(`UPDATE playlist_targets SET status = 'needs_login', version = version + 1, updated_at = ?1
+        WHERE playlist_id = ?2 AND device_id = ?3`).bind(now, playlistId, t.device_id));
+    }
+  }
+  if (stmts.length) await env.DB.batch(stmts);
 }
 
 export async function playlistsSave(request, env, user) {
@@ -122,52 +133,54 @@ export async function playlistsSave(request, env, user) {
   const name = clip(b?.name, 60);
   const type = b?.type === 'm3u' ? 'm3u' : b?.type === 'xtream' ? 'xtream' : '';
   if (!name || !type) return json({ error: 'Give the playlist a name and a type.' }, 400);
-  const devices = new Map((await devicesWithKeys(env, user.id)).map((d) => [d.id, d]));
-  const targets = Array.isArray(b?.targets) ? b.targets.slice(0, 50) : [];
-  if (!targets.length) return json({ error: 'Choose at least one device.' }, 400);
+  if (b?.vault != null && !vaultOk(b.vault)) return json({ error: "The login wasn't locked correctly. Reload the page and try again." }, 400);
+  const seals = Array.isArray(b?.seals) ? b.seals.slice(0, 50) : [];
+  if (seals.some((s) => !sealedOk(s?.payload))) return json({ error: "The login wasn't locked correctly for a device. Reload the page and try again." }, 400);
   const now = Date.now();
   let id = clip(b?.id, 40);
-  let existing = new Map();
   if (id) {
     const own = await env.DB.prepare('SELECT id FROM account_playlists WHERE id = ?1 AND user_id = ?2 AND removing = 0').bind(id, user.id).first();
     if (!own) return json({ error: 'That playlist is no longer in your account.' }, 404);
-    const r = await env.DB.prepare('SELECT device_id, action, version, status FROM playlist_targets WHERE playlist_id = ?1').bind(id).all();
-    existing = new Map(r.results.map((t) => [t.device_id, t]));
+    await env.DB.prepare('UPDATE account_playlists SET name = ?1, type = ?2, vault = COALESCE(?3, vault), updated_at = ?4 WHERE id = ?5')
+      .bind(name, type, b?.vault || null, now, id).run();
   } else {
+    if (!b?.vault && !seals.length) return json({ error: 'Enter the login.' }, 400);
     id = randomToken(12);
+    await env.DB.prepare('INSERT INTO account_playlists (id, user_id, name, type, vault, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)')
+      .bind(id, user.id, name, type, b?.vault || null, now).run();
   }
+  if (Array.isArray(b?.profiles)) {
+    const mine = new Set((await env.DB.prepare('SELECT id FROM profiles WHERE user_id = ?1').bind(user.id).all()).results.map((r) => r.id));
+    const stmts = [env.DB.prepare('DELETE FROM profile_playlists WHERE playlist_id = ?1').bind(id)];
+    for (const pid of b.profiles.map((x) => String(x)).filter((x) => mine.has(x)).slice(0, 50)) {
+      stmts.push(env.DB.prepare('INSERT INTO profile_playlists (profile_id, playlist_id, user_id) VALUES (?1, ?2, ?3)').bind(pid, id, user.id));
+    }
+    await env.DB.batch(stmts);
+  }
+  await reconcile(env, user.id);
+  await applySeals(env, user.id, id, seals, Boolean(b?.vault) || Boolean(b?.loginChanged));
+  return json({ ok: true, id, pending: await pendingLogins(env, user.id) });
+}
+
+/** GET /api/account/playlists/vault?id=: the playlist's login, still locked with the account's vault key. */
+export async function playlistVault(env, user, url) {
+  const row = await env.DB.prepare('SELECT vault FROM account_playlists WHERE id = ?1 AND user_id = ?2').bind(url.searchParams.get('id') || '', user.id).first();
+  return json({ vault: row?.vault || null });
+}
+
+export async function playlistsSeal(request, env, user) {
+  const b = await body(request);
+  const items = Array.isArray(b?.items) ? b.items.slice(0, 200) : [];
+  const now = Date.now();
   const stmts = [];
-  const chosen = new Set();
-  for (const t of targets) {
-    const dev = devices.get(String(t?.deviceId || ''));
-    if (!dev) return json({ error: 'One of those devices is no longer linked.' }, 400);
-    chosen.add(dev.id);
-    const profiles = Array.isArray(t.profiles) ? t.profiles.map((x) => clip(String(x), 40)).filter(Boolean).slice(0, 20) : null;
-    if (profiles && !profiles.length) return json({ error: `Choose at least one profile on ${dev.name}.` }, 400);
-    const prev = existing.get(dev.id);
-    const sealed = t.payload == null ? null : (sealedOk(t.payload) ? JSON.stringify(t.payload) : undefined);
-    if (sealed === undefined) return json({ error: 'The login for ' + dev.name + " wasn't sealed correctly. Reload the page and try again." }, 400);
-    const onDevice = prev && !(prev.action === 'remove') && !(prev.action === 'add' && prev.status !== 'done');
-    if (!sealed && !onDevice) return json({ error: `Enter the login again to send it to ${dev.name}.`, needLogin: dev.id }, 400);
-    const action = onDevice ? 'update' : 'add';
-    stmts.push(env.DB.prepare(
-      `INSERT INTO playlist_targets (playlist_id, device_id, user_id, profiles, action, payload, version, status, error, updated_at)
-       VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1, 'waiting', NULL, ?7)
-       ON CONFLICT(playlist_id, device_id) DO UPDATE SET profiles = ?4, action = ?5, payload = COALESCE(?6, payload),
-         version = version + 1, status = 'waiting', error = NULL, updated_at = ?7`
-    ).bind(id, dev.id, user.id, profiles ? JSON.stringify(profiles) : null, action, sealed, now));
+  for (const it of items) {
+    if (!sealedOk(it?.payload)) continue;
+    stmts.push(env.DB.prepare(`UPDATE playlist_targets SET payload = ?1, status = 'waiting', error = NULL, version = version + 1, updated_at = ?2
+      WHERE playlist_id = ?3 AND device_id = ?4 AND user_id = ?5 AND status = 'needs_login'`)
+      .bind(JSON.stringify(it.payload), now, String(it.playlistId || ''), String(it.deviceId || ''), user.id));
   }
-  for (const [devId, prev] of existing) {
-    if (chosen.has(devId)) continue;
-    stmts.push(env.DB.prepare(`UPDATE playlist_targets SET action = 'remove', payload = NULL, version = version + 1, status = 'waiting',
-      error = NULL, updated_at = ?1 WHERE playlist_id = ?2 AND device_id = ?3`).bind(now, id, devId));
-  }
-  stmts.unshift(existing.size
-    ? env.DB.prepare('UPDATE account_playlists SET name = ?1, type = ?2, updated_at = ?3 WHERE id = ?4').bind(name, type, now, id)
-    : env.DB.prepare('INSERT INTO account_playlists (id, user_id, name, type, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?5)').bind(id, user.id, name, type, now));
-  if (b?.id && !existing.size) stmts[0] = env.DB.prepare('UPDATE account_playlists SET name = ?1, type = ?2, updated_at = ?3 WHERE id = ?4').bind(name, type, now, id);
-  await env.DB.batch(stmts);
-  return json({ ok: true, id });
+  for (let i = 0; i < stmts.length; i += 50) await env.DB.batch(stmts.slice(i, i + 50));
+  return json({ ok: true, sent: stmts.length });
 }
 
 export async function playlistsRemove(request, env, user) {
@@ -177,7 +190,10 @@ export async function playlistsRemove(request, env, user) {
   if (!own) return json({ ok: true });
   const now = Date.now();
   await env.DB.batch([
-    env.DB.prepare('UPDATE account_playlists SET removing = 1, updated_at = ?1 WHERE id = ?2').bind(now, id),
+    env.DB.prepare('UPDATE account_playlists SET removing = 1, vault = NULL, updated_at = ?1 WHERE id = ?2').bind(now, id),
+    env.DB.prepare('DELETE FROM profile_playlists WHERE playlist_id = ?1').bind(id),
+    env.DB.prepare('DELETE FROM profile_visibility WHERE playlist_id = ?1').bind(id),
+    env.DB.prepare('DELETE FROM playlist_catalogs WHERE playlist_id = ?1').bind(id),
     // Devices that never got it just forget it; the others are told to remove it.
     env.DB.prepare(`DELETE FROM playlist_targets WHERE playlist_id = ?1 AND action = 'add' AND status != 'done'`).bind(id),
     env.DB.prepare(`UPDATE playlist_targets SET action = 'remove', payload = NULL, version = version + 1, status = 'waiting', error = NULL,

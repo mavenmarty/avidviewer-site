@@ -1,46 +1,14 @@
-<!-- {"title": "Playlists — Avid Viewer", "description": "Send your playlists to your devices and choose which profiles see them.", "nav": "account"} -->
-<div class="wrap">
-  <header class="page-head">
-    <h1>Playlists</h1>
-    <p>Enter a playlist here and choose the devices that get it and, on each one, which profiles can see it. Devices pick it up within a minute while Avid Viewer is open. No typing logins with a remote.</p>
-  </header>
-
-  <div class="setup" id="pl-page" hidden>
-    <section class="setup-card">
-      <h2>Your playlists</h2>
-      <ul class="rows" id="pl-list"></ul>
-      <button type="button" class="btn btn-primary" id="pl-new">＋ Add a playlist</button>
-    </section>
-
-    <form id="pl-form" class="setup-card" novalidate hidden>
-      <h2 id="pl-form-title">Add a playlist</h2>
-      <fieldset class="seg small" aria-label="Playlist type">
-        <label><input type="radio" name="pl-type" value="xtream" checked> Xtream Codes login</label>
-        <label><input type="radio" name="pl-type" value="m3u"> M3U link</label>
-      </fieldset>
-      <label class="fld">Name<input id="f-name" type="text" maxlength="60" placeholder="My provider" required></label>
-      <p class="soft" id="f-keep" hidden>The login isn't stored here, so it isn't shown. Leave it empty to keep it on your devices; enter it to change it, or to send this playlist to another device.</p>
-      <div id="pl-xtream" class="pl-xtream">
-        <label class="fld">Server<input id="f-server" type="url" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="http://server.example:8080"></label>
-        <div class="row2">
-          <label class="fld">Username<input id="f-user" type="text" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
-          <label class="fld">Password<input id="f-pass" type="password" autocomplete="off"></label>
-        </div>
-      </div>
-      <div id="pl-m3u" class="pl-m3u" hidden>
-        <label class="fld">M3U link<input id="f-m3u" type="url" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="https://…/playlist.m3u"></label>
-      </div>
-      <label class="fld">Guide (XMLTV) link, optional<input id="f-epg" type="url" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="https://…/guide.xml.gz"></label>
-
-      <h3>Send to</h3>
-      <div id="pl-devices"></div>
-
-      <div class="row-btns">
-        <button class="btn btn-primary" type="submit" id="pl-save">Send to devices</button>
-        <button class="btn btn-ghost" type="button" id="pl-cancel">Cancel</button>
-      </div>
-      <p id="pl-msg" class="form-msg" role="status" aria-live="polite"></p>
-      <p class="fineprint"><strong>Private by design:</strong> the login is locked in this browser separately for each device, with a key only that device has. We keep the playlist's name and type; the locked login is deleted as soon as the device has it. Avid Viewer is a media player and doesn't provide any content; add only playlists you have the rights to.</p>
-    </form>
-  </div>
+<!-- {"title": "Playlists — Avid Viewer", "description": "Your account's playlists: give each one to the profiles that should have it.", "nav": "account"} -->
+<div class="wrap mg" id="mg" data-page="playlists">
+  <nav class="mg-tabs" aria-label="Manage">
+    <a href="/playlists/" aria-current="page">Playlists</a>
+    <a href="/profiles/">Profiles</a>
+    <a href="/devices/">Devices</a>
+    <a href="/account/#backups">Backups</a>
+    <a href="/account/">Account</a>
+  </nav>
+  <p class="soft mg-loading" id="mg-loading">Loading…</p>
+  <div id="mg-pending"></div>
+  <div id="mg-body" hidden></div>
+  <p id="mg-msg" class="form-msg" role="status" aria-live="polite"></p>
 </div>
