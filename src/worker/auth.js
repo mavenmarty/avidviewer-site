@@ -17,7 +17,7 @@
 // send to the server and don't "click", so a scanner can't use up someone's link.
 
 import { playlistsSave, playlistsSeal, playlistsRemove, playlistVault } from './playlists.js';
-import { attention, playlistsRetry } from './attention.js';
+import { attention, attentionDismiss, playlistsRetry } from './attention.js';
 import { manage, catalogFor, profileSave, profileRemove, profilePin, profileVisibility, deviceSetProfiles, deviceStop, vaultKey, accountKeySave, deviceLogins, playlistsImport, playlistsAdopt } from './profiles.js';
 import {
   generateRegistrationOptions, verifyRegistrationResponse,
@@ -342,6 +342,7 @@ async function deleteAccount(request, env, user) {
     env.DB.prepare('DELETE FROM profiles WHERE user_id = ?1').bind(user.id),
     env.DB.prepare('DELETE FROM vault_keys WHERE user_id = ?1').bind(user.id),
     env.DB.prepare('DELETE FROM account_keys WHERE user_id = ?1').bind(user.id),
+    env.DB.prepare('DELETE FROM attention_dismissed WHERE user_id = ?1').bind(user.id),
     env.DB.prepare('DELETE FROM device_playlists WHERE user_id = ?1').bind(user.id),
     env.DB.prepare('DELETE FROM account_playlists WHERE user_id = ?1').bind(user.id),
     env.DB.prepare('DELETE FROM devices WHERE user_id = ?1').bind(user.id),
@@ -403,6 +404,7 @@ export async function handleAccountApi(request, env, realUrl) {
     case '/api/account/vault/account-key': return accountKeySave(request, env, user);
     case '/api/account/device-logins': return request.method === 'GET' ? deviceLogins(env, user) : json({ error: 'Use GET.' }, 405);
     case '/api/account/attention': return request.method === 'GET' ? attention(env, user) : json({ error: 'Use GET.' }, 405);
+    case '/api/account/attention/dismiss': return attentionDismiss(request, env, user);
     case '/api/account/playlists/retry': return playlistsRetry(request, env, user);
     case '/api/account/playlists/import': return playlistsImport(request, env, user);
     case '/api/account/playlists/adopt': return playlistsAdopt(request, env, user);

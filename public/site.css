@@ -343,3 +343,10 @@ button.btn-ghost { background: transparent; color: var(--text); }
 .mg-att strong { color: var(--text); font-size: 15px; }
 .mg-att p { margin: 0; color: var(--soft); font-size: 14px; line-height: 1.5; }
 .mg-att-acts { display: flex; gap: 16px; flex-wrap: wrap; font-size: 14px; }
+
+.mg-att-quiet { display: flex; gap: 16px; align-items: center; padding: 12px 18px; color: var(--soft); font-size: 14px; flex-wrap: wrap; }
+.mg-att-list .mg-att-quiet { padding: 10px 0 4px; }
+.mg-att-gone { padding: 0 18px 8px; opacity: 0.75; }
+.mg-dismiss { color: var(--muted); }
+.mg-warn { margin: 0; color: #F5C77E; font-size: 14px; }
+.mg-chip.mg-away { background: #2E2721; color: #CFC3B5; margin-left: 8px; vertical-align: 3px; font-size: 12px; }

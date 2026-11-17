@@ -3,6 +3,8 @@
 //
 //   GET  /api/account/attention          {items:[{level, tab, title, detail, actions:[{label, href? | retry?}]}]}
 //   POST /api/account/playlists/retry    {playlistId, deviceId}  try a failed playlist again on that device
+//   POST /api/account/attention/dismiss  {key, restore?}  hide an item until its state changes (or show it again)
+// Each item's key names the item and its state, so a dismissed item comes back when something about it changes.
 //
 // level: "error" (something failed), "warn" (waiting on the owner or a device), "info" (worth knowing).
 
@@ -15,6 +17,7 @@ const STALE = 15 * MIN;          // a device with changes waiting that hasn't ch
 const NO_CATALOG = 10 * MIN;     // a playlist on a device that still hasn't sent its categories
 const OLD_BACKUP = 3 * DAY;
 const STOP_SLOW = 2 * MIN;
+export const AWAY = 7 * DAY;    // a device not seen for this long is Away: its waiting changes stop raising items
 const MIN_APP = '1.15.0';
 
 const ago = (t, now) => {
@@ -56,11 +59,12 @@ export async function attention(env, user) {
   ]);
   const dev = new Map(devs.results.map((d) => [d.id, d]));
   const items = [];
-  const add = (level, tab, title, detail, actions = [], kind) => items.push({ level, tab, title, detail, actions, ...(kind ? { kind } : {}) });
+  const add = (key, level, tab, title, detail, actions = [], kind) => items.push({ key, level, tab, title, detail, actions, ...(kind ? { kind } : {}) });
+  const away = (d) => d.last_seen && now - d.last_seen > AWAY;
 
   // Playlists a device couldn't add.
   for (const t of targets.results.filter((x) => x.status === 'failed' && dev.has(x.device_id))) {
-    add('error', 'playlists', `${t.name} couldn’t be added on ${dev.get(t.device_id).name}`,
+    add(`failed:${t.playlist_id}:${t.device_id}:${t.updated_at}`, 'error', 'playlists', `${t.name} couldn’t be added on ${dev.get(t.device_id).name}`,
       explain(t.error) + ` (${ago(t.updated_at, now)}; the device said: “${t.error}”)`,
       [{ label: 'Edit playlist', href: `/playlists/#edit=${t.playlist_id}` }, { label: 'Try again', retry: { playlistId: t.playlist_id, deviceId: t.device_id } }]);
   }
@@ -72,7 +76,7 @@ export async function attention(env, user) {
   }
   for (const [d, ts] of waiting) {
     const kept = ts.every((t) => t.kept);
-    add('warn', 'playlists', `${dev.get(d).name} is waiting for the login to ${list(ts.map((t) => t.name))}`,
+    add(`logins:${d}:${ts.map((t) => t.playlist_id).sort().join(',')}`, 'warn', 'playlists', `${dev.get(d).name} is waiting for the login to ${list(ts.map((t) => t.name))}`,
       kept ? 'The logins are kept in your account: unlock them with your passkey on the Playlists page to send them.'
         : 'Your account doesn’t have these logins yet. Unlock on the Playlists page (a device that has them sends them), or edit the playlist and type the login once.',
       [{ label: 'Send logins', href: '/playlists/' }], 'logins');
@@ -80,28 +84,34 @@ export async function attention(env, user) {
   // Devices that need a newer app.
   for (const d of devs.results) {
     if (d.app_version ? older(d.app_version, MIN_APP) : !d.managed_at) {
-      add('warn', 'devices', `${d.name} needs an update`,
-        `${d.app_version ? `It’s on Avid Viewer ${d.app_version}.` : 'It’s on an older Avid Viewer.'} Update it to ${MIN_APP} or later and open it once to use profiles and playlists from your account.`);
+      add(`update:${d.id}:${d.app_version || ''}`, 'warn', 'devices', `${d.name} needs an update`,
+        `${d.app_version ? `It’s on Avid Viewer ${d.app_version}.` : 'It’s on an older Avid Viewer.'} Update it to ${MIN_APP} or later and open it once to use profiles and playlists from your account. If you can’t update it, dismiss this: it keeps working with what it has.`);
     }
   }
   // Changes waiting for a device that isn't checking in.
   for (const d of devs.results) {
     const n = targets.results.filter((t) => t.device_id === d.id && t.status === 'waiting').length;
-    if (n && now - (d.last_seen || 0) > STALE) {
-      add('warn', 'devices', `${n} change${n === 1 ? '' : 's'} waiting for ${d.name}`,
+    if (away(d)) {
+      add(`away:${d.id}:${d.last_seen}`, 'info', 'devices', `${d.name} hasn’t checked in for ${Math.floor((now - d.last_seen) / DAY)} days`,
+        (n ? `${n} change${n === 1 ? '' : 's'} wait for it and arrive when Avid Viewer is opened on it again. ` : 'Nothing is waiting for it. ') +
+        'If you no longer use it, remove it: it’s signed out at its next check-in and its backup is kept 30 days.',
+        [{ label: 'Remove device', removeDevice: d.id }]);
+    } else if (n && now - (d.last_seen || 0) > STALE) {
+      add(`waiting:${d.id}`, 'warn', 'devices', `${n} change${n === 1 ? '' : 's'} waiting for ${d.name}`,
         `It last checked in ${d.last_seen ? ago(d.last_seen, now) : 'never'}. Changes arrive within a minute of opening Avid Viewer on it.`);
     }
   }
   // A Stop stream that hasn't been confirmed.
   for (const d of devs.results) {
     if (d.stop_at && now - d.stop_at > STOP_SLOW) {
-      add('warn', 'devices', `The stream on ${d.name} hasn’t confirmed it stopped`,
+      add(`stop:${d.id}:${d.stop_at}`, 'warn', 'devices', `The stream on ${d.name} hasn’t confirmed it stopped`,
         `Stop stream was pressed ${ago(d.stop_at, now)}. The device may be offline; it stops when it next checks in.`);
     }
   }
   // Removals still waiting on a device.
   for (const t of targets.results.filter((x) => x.action === 'remove' && x.status === 'waiting' && dev.has(x.device_id) && now - x.updated_at > HOUR)) {
-    add('info', 'playlists', `${t.name} is still on ${dev.get(t.device_id).name}`,
+    if (away(dev.get(t.device_id))) continue;
+    add(`removing:${t.playlist_id}:${t.device_id}`, 'info', 'playlists', `${t.name} is still on ${dev.get(t.device_id).name}`,
       `It was removed from your account ${ago(t.updated_at, now)}; the device removes it the next time Avid Viewer is open on it.`);
   }
   // Playlists on a device that haven't sent their categories.
@@ -110,35 +120,54 @@ export async function attention(env, user) {
   for (const t of targets.results.filter((x) => x.status === 'done' && x.action !== 'remove' && !x.removing && !withCat.has(x.playlist_id) && dev.get(x.device_id)?.managed_at && now - x.updated_at > NO_CATALOG)) {
     if (seen.has(t.playlist_id)) continue;
     seen.add(t.playlist_id);
-    add('info', 'profiles', `No categories or channels for ${t.name} yet`,
+    add(`catalog:${t.playlist_id}`, 'info', 'profiles', `No categories or channels for ${t.name} yet`,
       `It’s on ${dev.get(t.device_id)?.name || 'a device'}, which sends them after it loads the playlist. Open Avid Viewer there; if the playlist doesn’t load on the device, it can’t send them.`);
   }
   // Devices with no profiles from the account.
   for (const d of devs.results.filter((x) => x.managed_at && !x.nprof && profs.results.length)) {
-    add('info', 'devices', `${d.name} has no profiles from your account`,
+    add(`noprof:${d.id}`, 'info', 'devices', `${d.name} has no profiles from your account`,
       'It gets no playlists from your account until you tick at least one profile for it.', [{ label: 'Choose profiles', href: '/devices/' }]);
   }
   // Kids profile without PINs on the grown-ups.
-  if (profs.results.some((p) => p.kids)) {
-    const missing = profs.results.filter((p) => !p.kids && !p.pin).map((p) => p.name);
-    if (missing.length) add('error', 'profiles', `${list(missing)} ${missing.length === 1 ? 'has' : 'have'} no PIN`,
-      'While a Kids profile exists, every grown-up profile needs a PIN, so a child can’t switch to it on the TV.', [{ label: 'Set PINs', href: '/profiles/' }]);
+  // A Kids profile isn't finished (or sent to devices) until every grown-up profile has a PIN.
+  const kids = profs.results.filter((p) => p.kids);
+  const missing = profs.results.filter((p) => !p.kids && !p.pin).map((p) => p.name);
+  if (kids.length && missing.length) {
+    add(`kids:${kids.map((k) => k.id).join(',')}:${missing.join(',')}`, 'warn', 'profiles', `${list(kids.map((k) => k.name))} isn’t set up yet`,
+      `A Kids profile goes to your devices once every grown-up profile has a PIN, so a child can’t switch out of it. Still needed: ${list(missing)}.`,
+      [{ label: 'Finish setting up', href: `/profiles/#finish=${kids[0].id}` }]);
   }
   // Backups.
   if (!(typeof env.BACKUP_PIN_KEY === 'string' && env.BACKUP_PIN_KEY.length)) {
-    add('error', 'backups', 'Backups can’t be saved right now',
+    add('backupsoff', 'error', 'backups', 'Backups can’t be saved right now',
       'The website refuses backups until its BACKUP_PIN_KEY secret is added (Cloudflare › Workers › avidviewer › Settings › Variables and Secrets, as a Secret). Devices see “Backups aren’t turned on yet”.');
   }
   for (const b of backups.results) {
     const d = dev.get(b.device_id);
     if (d && now - b.created_at > OLD_BACKUP) {
-      add('warn', 'backups', `${d.name}’s last backup was ${ago(b.created_at, now)}`,
+      if (away(d)) continue;
+      add(`backupold:${b.device_id}:${b.created_at}`, 'warn', 'backups', `${d.name}’s last backup was ${ago(b.created_at, now)}`,
         'Devices back up once a day when something changed. Check Back up every day in Avid Viewer › Settings › Updates & about on that device, or press Back up now.');
     }
   }
   const order = { error: 0, warn: 1, info: 2 };
   items.sort((a, b) => order[a.level] - order[b.level]);
-  return json({ items });
+  const gone = new Set((await env.DB.prepare('SELECT key FROM attention_dismissed WHERE user_id = ?1').bind(uid).all()).results.map((r) => r.key));
+  // Dismissals of items that no longer exist are forgotten.
+  const live = new Set(items.map((i) => i.key));
+  const stale = [...gone].filter((k) => !live.has(k));
+  if (stale.length) await env.DB.batch(stale.slice(0, 50).map((k) => env.DB.prepare('DELETE FROM attention_dismissed WHERE user_id = ?1 AND key = ?2').bind(uid, k)));
+  return json({ items: items.filter((i) => !gone.has(i.key)), dismissed: items.filter((i) => gone.has(i.key)) });
+}
+
+/** Dismiss an item until its state changes, or show it again ({key, restore:true}). */
+export async function attentionDismiss(request, env, user) {
+  const b = await body(request);
+  const key = typeof b?.key === 'string' ? b.key.slice(0, 400) : '';
+  if (!key) return json({ error: 'Nothing to dismiss.' }, 400);
+  if (b?.restore) await env.DB.prepare('DELETE FROM attention_dismissed WHERE user_id = ?1 AND key = ?2').bind(user.id, key).run();
+  else await env.DB.prepare('INSERT OR REPLACE INTO attention_dismissed (user_id, key, dismissed_at) VALUES (?1, ?2, ?3)').bind(user.id, key, Date.now()).run();
+  return json({ ok: true });
 }
 
 /** Try a failed playlist again: its login is locked for the device again in the browser (status needs_login). */

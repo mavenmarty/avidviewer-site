@@ -284,10 +284,15 @@
   }
   function route() {
     var h = location.hash.replace(/^#/, '');
-    var m = /^(edit|manage|new)(?:=(.*))?$/.exec(h);
+    var m = /^(edit|manage|new|finish)(?:=(.*))?$/.exec(h);
     editing = false;
     if (PAGE === 'playlists') { if (m && m[1] === 'edit') return playlistEditor(pl(m[2]) || null); if (m && m[1] === 'new') return playlistEditor(null); return playlistsPage(); }
-    if (PAGE === 'profiles') { if (m && m[1] === 'manage' && prof(m[2])) return profileManager(prof(m[2])); if (m && m[1] === 'new') return newProfile(); return profilesPage(); }
+    if (PAGE === 'profiles') {
+      if (m && m[1] === 'manage' && prof(m[2])) return profileManager(prof(m[2]));
+      if (m && m[1] === 'finish' && prof(m[2])) return kidsPins(prof(m[2]));
+      if (m && m[1] === 'new') return newProfile();
+      return profilesPage();
+    }
     if (PAGE === 'devices') return devicesPage();
   }
   window.addEventListener('hashchange', function () { say(''); route(); });
@@ -567,7 +572,7 @@
     var b = body('Profiles', 'A profile is a person (or the kids). It gets playlists, hides what it shouldn\'t see, and appears on the devices you choose.');
     add(b, btn('＋ Add a profile', 'btn btn-primary', function () { go('#new'); }));
     var need = S.profiles.some(function (q) { return q.kids; }) && S.profiles.filter(function (q) { return !q.kids && !q.hasPin; });
-    if (need && need.length) add(b, add(el('section', 'mg-banner'), el('p', null, 'While a Kids profile exists, every other profile needs a PIN. Set one for ' + names(need.map(function (q) { return q.name; })) + ' (Manage › PIN).')));
+
     if (!S.profiles.length) add(b, el('p', 'soft', 'No profiles yet. Devices with one profile, or none, show no profiles at all.'));
     var grid = el('div', 'mg-grid');
     S.profiles.forEach(function (q) {
@@ -577,6 +582,9 @@
       var dl = el('dl', 'mg-dl');
       [['Playlists', pls.length ? names(pls) : 'None yet'], ['Devices', q.devices.length ? q.devices.length + (q.devices.length === 1 ? ' device' : ' devices') : 'None yet'],
         ['Hidden', hiddenText(q)]].forEach(function (x) { add(dl, el('dt', null, x[0]), el('dd', null, x[1])); });
+      var waitPins = q.kids ? S.profiles.filter(function (x) { return !x.kids && !x.hasPin; }) : [];
+      if (waitPins.length) add(c, el('p', 'mg-warn', 'Not on your devices yet: ' + names(waitPins.map(function (x) { return x.name; })) + (waitPins.length === 1 ? ' needs' : ' need') + ' a PIN first.'),
+        btn('Finish setting up', 'btn btn-primary', function () { go('#finish=' + q.id); }));
       add(c, head, dl, btn('Manage', 'btn btn-ghost', function () { go('#manage=' + q.id); }));
       grid.appendChild(c);
     });
@@ -631,10 +639,10 @@
 
   /** Step 2 of a new Kids profile (artboard 4b): every grown-up profile gets a PIN first. */
   function kidsPins(kid) {
-    var b = body('Lock the grown-up profiles first', 'While a Kids profile exists, every other profile needs a 4-digit PIN, so a child can\'t switch to it on the TV. Set one for each profile below; they go to your devices with the new profile.');
+    var b = body(kid.id ? 'Finish setting up ' + kid.name : 'Lock the grown-up profiles first', 'While a Kids profile exists, every other profile needs a 4-digit PIN, so a child can\'t switch to it on the TV. Set one for each profile below; they go to your devices with the new profile.');
     b.insertBefore(back('Profiles', '#'), b.firstChild);
     var f = el('form', 'mg-card'); f.noValidate = true;
-    add(f, el('p', 'fineprint', 'NEW KIDS PROFILE · STEP 2 OF 2 · ' + kid.name));
+    add(f, el('p', 'fineprint', kid.id ? 'KIDS PROFILE · NOT ON YOUR DEVICES UNTIL THESE PINS ARE SET' : 'NEW KIDS PROFILE · STEP 2 OF 2 · ' + kid.name));
     var grown = S.profiles.filter(function (q) { return !q.kids; });
     var pairs = {};
     if (!grown.length) add(f, el('p', 'soft', 'There are no grown-up profiles yet, so there\'s nothing to lock. Add one for yourself (with a PIN) so you can leave the Kids profile on the TV.'));
@@ -643,7 +651,7 @@
       f.appendChild(row);
       if (!q.hasPin) { pairs[q.id] = pinPair(); f.appendChild(pairs[q.id]); }
     });
-    var sv = el('button', 'btn btn-primary', 'Create ' + kid.name + ' and send PINs to devices'); sv.type = 'submit';
+    var sv = el('button', 'btn btn-primary', (kid.id ? 'Save PINs and send ' : 'Create ') + kid.name + (kid.id ? ' to devices' : ' and send PINs to devices')); sv.type = 'submit';
     add(f, add(el('div', 'row-btns'), sv, btn('Cancel', 'btn btn-ghost', function () { go('#'); })),
       el('p', 'fineprint', 'PINs are saved only as a salted one-way hash, never as digits, and devices get the same hash within a minute. A parent\'s PIN also unlocks any profile on the TV. Forgot one? Change it here any time.'));
     b.appendChild(f);
@@ -651,7 +659,9 @@
       e.preventDefault();
       var pins = {};
       for (var id in pairs) { var pr = pairs[id].problem(); if (pr) return say((prof(id) || {}).name + ': ' + pr, true); pins[id] = await pinHash(pairs[id].value()); }
-      var r = await post('/api/account/profiles/save', { name: kid.name, kids: true, color: kid.color, pins: pins, playlists: [], devices: [] });
+      var r = kid.id
+        ? await post('/api/account/profiles/save', { id: kid.id, name: kid.name, kids: true, color: kid.color, pins: pins })
+        : await post('/api/account/profiles/save', { name: kid.name, kids: true, color: kid.color, pins: pins, playlists: [], devices: [] });
       if (!r._ok) return say(r.error, true);
       say(''); await load(); go('#manage=' + r.id);
     });
@@ -801,7 +811,10 @@
     S.devices.forEach(function (d) {
       var c = el('section', 'mg-card');
       var head = el('div', 'mg-dev-head');
-      add(head, add(el('div'), el('h3', null, d.name), el('p', 'soft', [d.model, d.appVersion ? 'Avid Viewer ' + d.appVersion : '', ago(d.lastSeen)].filter(Boolean).join(' · '))),
+      var isAway = d.lastSeen && Date.now() - d.lastSeen > 7 * 86400000;
+      add(head, add(el('div'), add(el('h3', null, d.name), isAway ? el('span', 'mg-chip mg-away', 'Away') : null),
+        el('p', 'soft', [d.model, d.appVersion ? 'Avid Viewer ' + d.appVersion : '', ago(d.lastSeen)].filter(Boolean).join(' · ')),
+        isAway ? el('p', 'fineprint', 'Changes wait for it and arrive when Avid Viewer is opened on it again. If you no longer use it, remove it.') : null),
         add(el('div', 'row-btns'),
           btn('Rename', 'linkish', async function () {
             var n = prompt('New name for ' + d.name, d.name); if (!n || !n.trim()) return;

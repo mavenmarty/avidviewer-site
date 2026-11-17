@@ -193,10 +193,13 @@ export async function mergeDevice(env, d, reported, visibility) {
 
 /** The profiles on device [deviceId], in the account's order, as the device needs them; and their hash. */
 export async function deviceProfiles(env, deviceId) {
-  const ps = (await env.DB.prepare(
+  let ps = (await env.DB.prepare(
     `SELECT p.id, p.name, p.kids, p.parent, p.color, p.pin FROM device_profiles dp JOIN profiles p ON p.id = dp.profile_id
       WHERE dp.device_id = ?1 ORDER BY p.sort, p.created_at`
   ).bind(deviceId).all()).results;
+  // A Kids profile isn't finished until every grown-up profile in the account has a PIN: until then devices don't get it.
+  const unfinished = await env.DB.prepare(`SELECT 1 FROM profiles WHERE user_id = (SELECT user_id FROM devices WHERE id = ?1) AND kids = 0 AND pin IS NULL`).bind(deviceId).first();
+  if (unfinished) ps = ps.filter((p) => !p.kids);
   const ids = ps.map((p) => p.id);
   const pls = ids.length ? (await env.DB.prepare(
     `SELECT pp.profile_id, pp.playlist_id FROM profile_playlists pp JOIN account_playlists a ON a.id = pp.playlist_id AND a.removing = 0
