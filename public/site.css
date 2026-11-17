@@ -408,3 +408,6 @@ button.btn-ghost { background: transparent; color: var(--text); }
 .mg-rows .linkish { font-size: 14px; }
 @media (max-width: 1100px) { .mg-order-cats .mg-rows > li, .mg-order-chans .mg-rows > li { flex-wrap: wrap; } }
 .mg-rename { flex: 1 1 100%; }
+
+/* How it works (home) */
+.how-steps { list-style: none; padding: 0; margin: 0; }
