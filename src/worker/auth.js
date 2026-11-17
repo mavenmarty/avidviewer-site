@@ -378,7 +378,7 @@ export async function handleAccountApi(request, env, realUrl) {
     // (wrangler dev rewrites the Origin header to the real site's address, so that one is accepted locally too.)
     const origin = request.headers.get('origin');
     if (origin !== url.origin && origin !== realUrl.origin) return json({ error: 'Not allowed.' }, 403);
-  } else if (!(request.method === 'GET' && (p === '/api/me' || p === '/api/account/manage' || p === '/api/account/catalog' || p === '/api/account/playlists/vault' || p === '/api/account/device-logins' || p === '/api/account/attention' || p === '/api/account/lists' || p === '/api/account/order' || p === '/api/account/history' || p === '/api/account/history/devices' || p.startsWith('/api/admin/')))) {
+  } else if (!(request.method === 'GET' && (p === '/api/me' || p === '/api/account/manage' || p === '/api/account/catalog' || p === '/api/account/playlists/vault' || p === '/api/account/device-logins' || p === '/api/account/attention' || p === '/api/account/lists' || p === '/api/account/order' || p === '/api/account/history' || p === '/api/account/history/devices' || p === '/api/account/profiles/visibility' || p.startsWith('/api/admin/')))) {
     return json({ error: 'Use POST.' }, 405);
   }
 

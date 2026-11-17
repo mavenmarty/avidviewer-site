@@ -450,6 +450,14 @@ export async function profilePin(request, env, user) {
 }
 
 export async function profileVisibility(request, env, user) {
+  if (request.method === 'GET') {
+    // One profile's saved choices for one playlist, read fresh, so the editor never starts from another copy.
+    const url = new URL(request.url);
+    const prof = clip(url.searchParams.get('profile'), 40), pl = clip(url.searchParams.get('playlist'), 40);
+    const row = await env.DB.prepare('SELECT data, updated_at FROM profile_visibility WHERE profile_id = ?1 AND playlist_id = ?2 AND user_id = ?3')
+      .bind(prof, pl, user.id).first();
+    return json({ profileId: prof, playlistId: pl, data: row ? JSON.parse(row.data) : null, updatedAt: row ? row.updated_at : null });
+  }
   const text = await request.text();
   if (text.length > VIS_MAX) return json({ error: 'Too many items. Hide whole categories instead of single channels.' }, 413);
   let b; try { b = JSON.parse(text); } catch { return json({ error: 'Not JSON.' }, 400); }
@@ -458,9 +466,10 @@ export async function profileVisibility(request, env, user) {
     .bind(prof, pl, user.id).first();
   if (!ok) return json({ error: 'That profile or playlist is no longer in your account.' }, 404);
   const vis = cleanVis(b?.data);
+  const now = Date.now();
   await env.DB.prepare(`INSERT INTO profile_visibility (profile_id, playlist_id, user_id, data, updated_at) VALUES (?1, ?2, ?3, ?4, ?5)
-    ON CONFLICT(profile_id, playlist_id) DO UPDATE SET data = ?4, updated_at = ?5`).bind(prof, pl, user.id, JSON.stringify(vis), Date.now()).run();
-  return json({ ok: true });
+    ON CONFLICT(profile_id, playlist_id) DO UPDATE SET data = ?4, updated_at = ?5`).bind(prof, pl, user.id, JSON.stringify(vis), now).run();
+  return json({ ok: true, profileId: prof, playlistId: pl, data: vis, updatedAt: now });
 }
 
 export async function deviceSetProfiles(request, env, user) {

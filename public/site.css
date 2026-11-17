@@ -258,7 +258,8 @@ button.btn-ghost { background: transparent; color: var(--text); }
 .mg .page-head { border: 0; padding: 28px 0 16px; }
 .mg-loading { padding: 24px 0; }
 #mg-body { display: flex; flex-direction: column; gap: 20px; align-items: stretch; }
-#mg-body > .btn { align-self: flex-start; }
+#mg-body > .btn, .mg-page > .btn { align-self: flex-start; }
+.mg-page { display: flex; flex-direction: column; gap: 20px; align-items: stretch; }
 .mg-card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 24px; display: flex; flex-direction: column; gap: 14px; }
 .mg-card h2 { font-size: 22px; }
 .mg-card h3 { font-size: 18px; }
@@ -419,3 +420,7 @@ button.btn-ghost { background: transparent; color: var(--text); }
 .mg-chips { display: flex; flex-wrap: wrap; gap: 10px; }
 .mg-chips .switch-row { border: 1px solid var(--line-2); border-radius: 12px; padding: 8px 12px; }
 .mg-card-quiet { border-color: var(--line-2); }
+
+.mg-addhead { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; position: sticky; top: 0; background: var(--card, #fff); padding: 4px 0; z-index: 1; }
+.mg-addhead .fineprint { margin: 0; }
+.mg-whose { font-weight: 600; margin: 4px 0 8px; }

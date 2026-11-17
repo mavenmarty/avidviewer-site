@@ -307,7 +307,10 @@
   window.addEventListener('hashchange', function () { say(''); route(); });
   function go(hash) { if ((location.hash || '#') === hash) route(); else location.hash = hash; }
   function body(title, intro) {
-    var b = $('mg-body'); b.innerHTML = '';
+    // A fresh page each time: a tab still loading for the page before (another profile, say) fills that old page,
+    // which is no longer shown, never this one (Nov 17: Evan's lists appeared on Maven's page).
+    var host = $('mg-body'); host.innerHTML = '';
+    var b = el('div', 'mg-page'); host.appendChild(b);
     var head = el('header', 'page-head'); add(head, el('h1', null, title));
     if (intro) add(head, el('p', null, intro));
     b.appendChild(head); return b;
@@ -769,12 +772,24 @@
 
   function blankVis() { return { hidden: { live: [], movie: [], series: [] }, channels: [], allowed: { live: [], movie: [], series: [] } }; }
   async function visEditor(q, plId, area) {
+    var ticket = area.dataset.ticket = String(Date.now() + Math.random());
     area.innerHTML = ''; area.appendChild(el('p', 'soft', 'Loading the playlist\'s categories…'));
-    var r = await fetch('/api/account/catalog?playlist=' + encodeURIComponent(plId), { credentials: 'same-origin' }).then(function (x) { return x.json(); });
+    // This profile's saved choices, read fresh for this profile and playlist (never another page's copy).
+    var [r, mineNow] = await Promise.all([
+      fetch('/api/account/catalog?playlist=' + encodeURIComponent(plId), { credentials: 'same-origin' }).then(function (x) { return x.json(); }),
+      getJson('/api/account/profiles/visibility?profile=' + encodeURIComponent(q.id) + '&playlist=' + encodeURIComponent(plId)),
+    ]);
+    if (area.dataset.ticket !== ticket || !area.isConnected) return; // another playlist or page was chosen meanwhile
     area.innerHTML = '';
     if (!r.catalog) { area.appendChild(el('p', 'soft', 'No device has sent this playlist\'s categories yet. Open Avid Viewer on a device that has it; they arrive within a minute.')); return; }
     var cat = r.catalog;
+    if (mineNow && mineNow._ok !== false && mineNow.profileId === q.id) { if (mineNow.data) q.visibility[plId] = mineNow.data; else delete q.visibility[plId]; }
+    var savedAt = mineNow && mineNow.updatedAt;
     var v = JSON.parse(JSON.stringify(q.visibility[plId] || blankVis()));
+    var plName = (pl(plId) || {}).name || 'this playlist';
+    var whose = el('p', 'mg-whose');
+    function drawWhose() { whose.textContent = 'Editing ' + q.name + '’s choices for ' + plName + ' · ' + (savedAt ? 'last saved ' + when(savedAt) : 'not saved yet') + '. Other profiles keep their own.'; }
+    drawWhose();
     var kind = 'live';
     var openCat = null;
     var tabs = el('div', 'seg small'); var list = el('div', 'mg-vis');
@@ -830,11 +845,13 @@
       var res = await post('/api/account/profiles/visibility', { profileId: q.id, playlistId: plId, data: v });
       sv.disabled = false;
       if (!res._ok) return say(res.error, true);
-      q.visibility[plId] = v; say('Saved. Devices pick it up within a minute.');
+      if (res.profileId && res.profileId !== q.id) return say('That was saved for another profile. Reload the page and try again.', true);
+      q.visibility[plId] = JSON.parse(JSON.stringify(v)); savedAt = res.updatedAt || Date.now(); drawWhose();
+      say('Saved for ' + q.name + ' only. Devices pick it up within a minute.');
     });
     add(area, el('p', 'fineprint', q.kids ? 'Kids profile: everything starts hidden. Show the categories it may watch; adult categories can\'t be shown.'
       : 'Hidden categories and channels disappear from the guide, search, Favorites and Sports for this profile, on every device it\'s on.'),
-      tabs, list, sv, el('p', 'fineprint', 'Names come from the playlist as ' + (cat.device || 'a device') + ' last downloaded it (' + new Date(r.updatedAt).toLocaleString() + ').'));
+      whose, tabs, list, sv, el('p', 'fineprint', 'Names come from the playlist as ' + (cat.device || 'a device') + ' last downloaded it (' + new Date(r.updatedAt).toLocaleString() + ').'));
     draw();
   }
 
@@ -1413,14 +1430,29 @@
         var rows = [];
         if (qq) Object.keys(CH).forEach(function (k) { if (CH[k].name.toLowerCase().indexOf(qq) >= 0) rows.push(k); });
         else (gs.find(function (g) { return g.raw === addCat; }) || { ch: [] }).ch.forEach(function (x) { var k = addPl + ':' + x[0]; if (CH[k]) rows.push(k); });
-        res.appendChild(el('p', 'fineprint', (qq ? rows.length + ' match “' + addFind.trim() + '” in all of ' + q.name + '’s playlists' : rows.length + ' channels') + (rows.length > 300 ? ' · showing the first 300' : '')));
-        rows.slice(0, 300).forEach(function (k) {
+        // Every channel in the category (or every match), however many: no first-300 limit.
+        var free = rows.filter(function (k) { return keys.indexOf(k) < 0; });
+        var boxes = [];
+        function syncAllBtns() {
+          var n = free.filter(function (k) { return picked[k]; }).length;
+          allB.disabled = !free.length || n === free.length; noneB.disabled = !n;
+        }
+        var allB = btn('Select all', 'btn btn-ghost btn-sm', function () { free.forEach(function (k) { picked[k] = 1; }); boxes.forEach(function (b2) { if (!b2.disabled) b2.checked = true; }); syncAllBtns(); drawFoot(); });
+        var noneB = btn('Select none', 'btn btn-ghost btn-sm', function () { free.forEach(function (k) { delete picked[k]; }); boxes.forEach(function (b2) { if (!b2.disabled) b2.checked = false; }); syncAllBtns(); drawFoot(); });
+        allB.setAttribute('aria-label', 'Select all ' + free.length + ' channels shown'); noneB.setAttribute('aria-label', 'Select none of the channels shown');
+        add(res, add(el('div', 'mg-addhead'), el('p', 'fineprint', (qq ? rows.length + ' match “' + addFind.trim() + '” in all of ' + q.name + '’s playlists' : rows.length + (rows.length === 1 ? ' channel' : ' channels')) + (rows.length - free.length ? ' · ' + (rows.length - free.length) + ' already in the list' : '')),
+          add(el('div', 'row-btns'), allB, noneB)));
+        var frag = document.createDocumentFragment();
+        rows.forEach(function (k) {
           var c = CH[k], already = keys.indexOf(k) >= 0;
           var l = el('label', 'mg-addrow'); var cb = el('input'); cb.type = 'checkbox'; cb.checked = already || !!picked[k]; cb.disabled = already;
-          cb.addEventListener('change', function () { if (cb.checked) picked[k] = 1; else delete picked[k]; drawFoot(); });
+          cb.addEventListener('change', function () { if (cb.checked) picked[k] = 1; else delete picked[k]; syncAllBtns(); drawFoot(); });
+          boxes.push(cb);
           add(l, cb, add(el('span', 'mg-name'), el('span', 'mg-strong', c.name), el('span', 'mg-provider', c.playlist + ' · ' + c.group)), already ? el('span', 'mg-ok', 'Already in the list') : null);
-          res.appendChild(l);
+          frag.appendChild(l);
         });
+        res.appendChild(frag);
+        syncAllBtns();
         drawFoot();
       }
       function drawFoot() {
