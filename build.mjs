@@ -57,7 +57,6 @@ ${body}
   <div class="wrap">
     <nav aria-label="Footer">
       <a href="/guide/">User guide</a>
-      <a href="/setup/">Set up a TV</a>
       <a href="/support/">Support</a>
       <a href="/privacy/">Privacy</a>
       <a href="/terms/">Terms</a>
@@ -173,7 +172,7 @@ async function main() {
     const name = basename(f, '.html');
     const path = name === 'index' ? '/' : `/${name}/`;
     const scripts = name === 'index' ? '<script src="/notify.js" defer></script>'
-      : name === 'setup' ? '<script src="/setup.js" defer></script>'
+      : name === 'playlists' ? '<script src="/playlists.js" defer></script>'
       : name === 'signin' || name === 'account' || name === 'link' ? '<script src="/js/webauthn.js" defer></script><script src="/account.js" defer></script>'
       : name === 'admin' ? '<script src="/js/webauthn.js" defer></script><script src="/admin.js" defer></script>' : '';
     const html = layout({ ...meta, path, body, scripts });

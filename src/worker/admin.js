@@ -41,7 +41,8 @@ async function stats(env) {
   const tvs = await one('SELECT COUNT(*) AS n FROM devices WHERE revoked_at IS NULL');
   const tvs7 = await one('SELECT COUNT(*) AS n FROM devices WHERE revoked_at IS NULL AND last_seen > ?1', now - 7 * DAY);
   const passkeys = await one('SELECT COUNT(DISTINCT user_id) AS n FROM passkeys');
-  const setupCodes24h = await one("SELECT COUNT(*) AS n FROM setup_codes WHERE created_at > ?1", iso(now - DAY));
+  const playlists = await one('SELECT COUNT(*) AS n FROM account_playlists');
+  const playlistsWaiting = await one("SELECT COUNT(*) AS n FROM playlist_targets WHERE status = 'waiting'");
   const launchNews = await one('SELECT COUNT(*) AS n FROM signups');
   const backupCount = await one('SELECT COUNT(*) AS n FROM backups');
   const backupBytes = await one('SELECT COALESCE(SUM(size), 0) AS n FROM backups');
@@ -53,7 +54,7 @@ async function stats(env) {
   ).bind(iso(now - 30 * DAY)).all()).results;
   // Whether the BACKUP_PIN_KEY secret reaches the Worker (never its value): without it backups are refused.
   const backupsReady = typeof env.BACKUP_PIN_KEY === 'string' && env.BACKUP_PIN_KEY.length > 0;
-  return json({ users, new7, new30, active7, suspended, tvs, tvs7, passkeys, setupCodes24h, launchNews, backupCount, backupBytes, backupsReady, versions, daily });
+  return json({ users, new7, new30, active7, suspended, tvs, tvs7, passkeys, playlists, playlistsWaiting, launchNews, backupCount, backupBytes, backupsReady, versions, daily });
 }
 
 async function users(env, url) {
@@ -182,6 +183,8 @@ async function deleteUser(request, env, admin) {
     env.DB.prepare('DELETE FROM passkeys WHERE user_id = ?1').bind(u.id),
     env.DB.prepare('DELETE FROM webauthn_challenges WHERE user_id = ?1').bind(u.id),
     env.DB.prepare('DELETE FROM backups WHERE user_id = ?1').bind(u.id),
+    env.DB.prepare('DELETE FROM playlist_targets WHERE user_id = ?1').bind(u.id),
+    env.DB.prepare('DELETE FROM account_playlists WHERE user_id = ?1').bind(u.id),
     env.DB.prepare('DELETE FROM devices WHERE user_id = ?1').bind(u.id),
     env.DB.prepare('DELETE FROM link_codes WHERE user_id = ?1').bind(u.id),
     env.DB.prepare('DELETE FROM admin_notes WHERE user_id = ?1').bind(u.id),

@@ -3,7 +3,7 @@ import { handleAccountApi } from './auth.js';
 import { handleTvApi } from './devices.js';
 
 // Phase 1: POST /api/notify stores a launch-news sign-up in D1.
-// Setup codes (Nov 15): POST /api/setup stores an encrypted setup for 30 minutes; GET /api/setup/<id> hands it to a TV.
+// Setup codes (Nov 15–16, 2026) are retired: /api/setup answers 410 and /setup/ goes to /playlists/.
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
@@ -54,47 +54,6 @@ async function notify(request, env) {
   return done();
 }
 
-// ---------------------------------------------------------------- setup codes
-const SETUP_TTL = 30 * 60 * 1000;
-const SETUP_MAX_DATA = 1_300_000;   // Base64 of ~950 KB: a backup file with room to spare
-const SETUP_PER_HOUR = 20;          // codes one address can make in an hour
-const SETUP_FETCHES = 5;            // a TV may retry a few times within the 30 minutes
-const HEX64 = /^[0-9a-f]{64}$/;
-const B64 = /^[A-Za-z0-9+/]+={0,2}$/;
-
-async function sha256hex(text) {
-  const d = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
-  return [...new Uint8Array(d)].map((b) => b.toString(16).padStart(2, '0')).join('');
-}
-
-async function setupCreate(request, env) {
-  let b;
-  try { b = await request.json(); } catch { return json({ error: "That didn't come through. Please try again." }, 400); }
-  if (b.website) return json({ expires: new Date(Date.now() + SETUP_TTL).toISOString() }); // bots
-  const id = String(b.id || ''), data = String(b.data || '');
-  if (!HEX64.test(id) || !data || data.length > SETUP_MAX_DATA || !B64.test(data)) {
-    return json({ error: data.length > SETUP_MAX_DATA ? 'That is too big to send. A backup file should be well under 1 MB.' : 'That setup looks damaged. Please reload the page and try again.' }, 400);
-  }
-  const now = Date.now();
-  await env.DB.prepare('DELETE FROM setup_codes WHERE expires_at < ?1').bind(now).run();
-  const ipHash = await sha256hex((request.headers.get('cf-connecting-ip') || '') + new Date(now).toISOString().slice(0, 10));
-  const recent = await env.DB.prepare('SELECT COUNT(*) AS n FROM setup_codes WHERE ip_hash = ?1 AND created_at > ?2')
-    .bind(ipHash, new Date(now - 3600_000).toISOString()).first();
-  if ((recent?.n || 0) >= SETUP_PER_HOUR) return json({ error: 'Too many codes from here in the last hour. Please try again later.' }, 429);
-  const expires = now + SETUP_TTL;
-  await env.DB.prepare('INSERT OR REPLACE INTO setup_codes (id, data, created_at, expires_at, fetches, ip_hash) VALUES (?1, ?2, ?3, ?4, 0, ?5)')
-    .bind(id, data, new Date(now).toISOString(), expires, ipHash).run();
-  return json({ expires: new Date(expires).toISOString() });
-}
-
-async function setupFetch(id, env) {
-  if (!HEX64.test(id)) return json({ error: 'Not found.' }, 404);
-  const now = Date.now();
-  const row = await env.DB.prepare('SELECT data, fetches FROM setup_codes WHERE id = ?1 AND expires_at >= ?2').bind(id, now).first();
-  if (!row || row.fetches >= SETUP_FETCHES) return json({ error: 'Not found.' }, 404);
-  await env.DB.prepare('UPDATE setup_codes SET fetches = fetches + 1 WHERE id = ?1').bind(id).run();
-  return json({ data: row.data });
-}
 
 export default {
   async fetch(request, env) {
@@ -103,6 +62,11 @@ export default {
     if (url.hostname === 'www.avidviewer.app') {
       url.hostname = 'avidviewer.app';
       return Response.redirect(url.toString(), 301);
+    }
+
+    // The setup page was retired with setup codes (Nov 16, 2026): playlists are sent to linked devices instead.
+    if (url.pathname === '/setup' || url.pathname.startsWith('/setup/')) {
+      return Response.redirect(new URL('/playlists/', url).toString(), 302);
     }
 
     // The What's new page was taken off the site (Nov 15, 2026): old links go to the user guide.
@@ -128,18 +92,9 @@ export default {
           return json({ error: 'Something went wrong on our side. Please try again later.' }, 500);
         }
       }
+      // Setup codes were retired on Nov 16, 2026 (playlists now go to linked devices from /playlists/).
       if (url.pathname === '/api/setup' || url.pathname.startsWith('/api/setup/')) {
-        try {
-          if (url.pathname === '/api/setup') {
-            if (request.method !== 'POST') return json({ error: 'Use POST.' }, 405);
-            return await setupCreate(request, env);
-          }
-          if (request.method !== 'GET') return json({ error: 'Use GET.' }, 405);
-          return await setupFetch(url.pathname.slice('/api/setup/'.length), env);
-        } catch (e) {
-          console.error('setup failed', e);
-          return json({ error: 'Something went wrong on our side. Please try again later.' }, 500);
-        }
+        return json({ error: 'Setup codes have been replaced: link the device to your account with the code on its screen, then add playlists at avidviewer.app/playlists.' }, 410);
       }
       return json({ error: 'Not found.' }, 404);
     }

@@ -16,6 +16,7 @@
 // the database can't be used to sign in. Sign-in links go in the URL's #fragment, which mail scanners don't
 // send to the server and don't "click", so a scanner can't use up someone's link.
 
+import { playlistsList, playlistsSave, playlistsRemove } from './playlists.js';
 import {
   generateRegistrationOptions, verifyRegistrationResponse,
   generateAuthenticationOptions, verifyAuthenticationResponse,
@@ -328,6 +329,8 @@ async function deleteAccount(request, env, user) {
     env.DB.prepare('DELETE FROM passkeys WHERE user_id = ?1').bind(user.id),
     env.DB.prepare('DELETE FROM webauthn_challenges WHERE user_id = ?1').bind(user.id),
     env.DB.prepare('DELETE FROM backups WHERE user_id = ?1').bind(user.id),
+    env.DB.prepare('DELETE FROM playlist_targets WHERE user_id = ?1').bind(user.id),
+    env.DB.prepare('DELETE FROM account_playlists WHERE user_id = ?1').bind(user.id),
     env.DB.prepare('DELETE FROM devices WHERE user_id = ?1').bind(user.id),
     env.DB.prepare('DELETE FROM link_codes WHERE user_id = ?1').bind(user.id),
     env.DB.prepare('DELETE FROM sign_in_links WHERE email = ?1').bind(user.email),
@@ -351,7 +354,7 @@ export async function handleAccountApi(request, env, realUrl) {
     // (wrangler dev rewrites the Origin header to the real site's address, so that one is accepted locally too.)
     const origin = request.headers.get('origin');
     if (origin !== url.origin && origin !== realUrl.origin) return json({ error: 'Not allowed.' }, 403);
-  } else if (!(request.method === 'GET' && (p === '/api/me' || p.startsWith('/api/admin/')))) {
+  } else if (!(request.method === 'GET' && (p === '/api/me' || p === '/api/account/playlists' || p.startsWith('/api/admin/')))) {
     return json({ error: 'Use POST.' }, 405);
   }
 
@@ -372,6 +375,9 @@ export async function handleAccountApi(request, env, realUrl) {
 
   switch (p) {
     case '/api/me': return me(env, user);
+    case '/api/account/playlists': return request.method === 'GET' ? playlistsList(env, user) : json({ error: 'Use GET.' }, 405);
+    case '/api/account/playlists/save': return playlistsSave(request, env, user);
+    case '/api/account/playlists/remove': return playlistsRemove(request, env, user);
     case '/api/account/settings': return settings(request, env, user);
     case '/api/account/sessions/end': return endSessions(request, env, user);
     case '/api/account/delete': return deleteAccount(request, env, user);

@@ -14,6 +14,7 @@
 // last seen and app version) and POST /api/tv/signout. Removing a TV on the Account page revokes its token.
 // TV routes take no cookies and no Origin header (they come from the app, not a browser).
 
+import { handlePlaylistTvApi } from './playlists.js';
 import { json, randomToken, sha256hex, ipOf, body } from './auth.js';
 
 const ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // same as setup codes: no 0/O, 1/I/L
@@ -54,7 +55,7 @@ function tvInfo(b) {
 }
 
 /** The linked device for a TV request (Authorization: Bearer <token>), or null. */
-async function deviceFor(request, env) {
+export async function deviceFor(request, env) {
   const m = (request.headers.get('authorization') || '').match(/^Bearer\s+([A-Za-z0-9_-]{20,})$/);
   if (!m) return null;
   return env.DB.prepare(
@@ -240,6 +241,8 @@ export async function handleTvApi(request, env, realUrl) {
   const url = env.SITE_ORIGIN ? new URL(realUrl.pathname + realUrl.search, env.SITE_ORIGIN) : realUrl; // local dev, as in auth.js
   const p = url.pathname;
   if (!p.startsWith('/api/tv/')) return null;
+  const pl = await handlePlaylistTvApi(request, env, p);
+  if (pl) return pl;
   if (p === '/api/tv/me') return request.method === 'GET' ? tvMe(request, env) : json({ error: 'Use GET.' }, 405);
   if (p === '/api/tv/backups') return request.method === 'GET' ? tvBackupList(request, env) : json({ error: 'Use GET.' }, 405);
   if (p === '/api/tv/backup' && request.method === 'GET') return tvBackupDownload(request, env, url);

@@ -57,7 +57,7 @@
     get('/api/admin/stats').then(function (s) {
       var box = $('adm-stats'); box.innerHTML = '';
       [['Accounts', s.users], ['New, 7 days', s.new7], ['New, 30 days', s.new30], ['Signed in, 7 days', s.active7], ['Linked devices', s.tvs],
-       ['Devices seen, 7 days', s.tvs7], ['With a passkey', s.passkeys], ['Suspended', s.suspended], ['Setup codes, 24 h', s.setupCodes24h], ['Launch news', s.launchNews], ['Backups', s.backupCount + (s.backupsReady ? ' · on' : ' · OFF: BACKUP_PIN_KEY secret missing')], ['Backup storage', Math.round((s.backupBytes || 0) / 1024) + ' KB']]
+       ['Devices seen, 7 days', s.tvs7], ['With a passkey', s.passkeys], ['Suspended', s.suspended], ['Playlists', s.playlists + (s.playlistsWaiting ? ' · ' + s.playlistsWaiting + ' waiting' : '')], ['Launch news', s.launchNews], ['Backups', s.backupCount + (s.backupsReady ? ' · on' : ' · OFF: BACKUP_PIN_KEY secret missing')], ['Backup storage', Math.round((s.backupBytes || 0) / 1024) + ' KB']]
         .forEach(function (k) { var c = el('div', 'adm-stat'); c.appendChild(el('span', 'n', String(k[1] || 0))); c.appendChild(el('span', 'l', k[0])); box.appendChild(c); });
       var bars = $('adm-daily'); bars.innerHTML = '';
       var byDay = {}; (s.daily || []).forEach(function (d) { byDay[d.day] = d.n; });
