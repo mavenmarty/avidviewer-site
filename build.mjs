@@ -42,7 +42,7 @@ function layout({ title, description, nav, path, body, scripts = '' }) {
     <a class="brand" href="/">${logo}<span>Avid Viewer</span></a>
     <nav class="nav" aria-label="Main">
       <a href="/#features">Features</a>
-      <a href="/#devices">Supported TVs</a>
+      <a href="/#devices">Get the app</a>
       <a href="/guide/"${cur('guide')}>User guide</a>
       <a href="/support/"${cur('support')}>Support</a>
       <a href="/playlists/"${cur('account')}>My account</a>
