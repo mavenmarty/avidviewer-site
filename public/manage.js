@@ -141,6 +141,74 @@
   async function openLogin(text) { return JSON.parse(new TextDecoder().decode(await dec(await unlock(), text))); }
   var seal = function (pub, obj) { return window.AvidPlaylists.seal(pub, obj); };
 
+  // The account's own key pair (1.15.1): devices lock their logins for its public key; its private key is kept only
+  // wrapped with the vault key, so a passkey is needed to open what devices send.
+  var AK = null;
+  async function accountPrivate() {
+    if (AK) return AK;
+    var v = await unlock();
+    if (S.accountKey) {
+      AK = await crypto.subtle.importKey('pkcs8', await dec(v, S.accountKey.wrapped), { name: 'ECDH', namedCurve: 'P-256' }, false, ['deriveBits']);
+      return AK;
+    }
+    var kp = await crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits']);
+    var pub = b64(new Uint8Array(await crypto.subtle.exportKey('raw', kp.publicKey)));
+    var r = await post('/api/account/vault/account-key', { pubkey: pub, wrapped: await enc(v, new Uint8Array(await crypto.subtle.exportKey('pkcs8', kp.privateKey))) });
+    if (!r._ok) throw new Error(r.error || 'The key couldn\'t be saved.');
+    S.accountKey = r.accountKey;
+    if (r.accountKey.pubkey !== pub) return accountPrivate(); // made at the same moment in another tab: use that one
+    AK = kp.privateKey;
+    return AK;
+  }
+  /** Opens a login a device locked for the account key. */
+  async function openSealed(env) {
+    var priv = await accountPrivate();
+    var epk = unb64(env.epk);
+    var pub = await crypto.subtle.importKey('raw', epk, { name: 'ECDH', namedCurve: 'P-256' }, false, []);
+    var z = await crypto.subtle.deriveBits({ name: 'ECDH', public: pub }, priv, 256);
+    var hk = await crypto.subtle.importKey('raw', z, 'HKDF', false, ['deriveKey']);
+    var key = await crypto.subtle.deriveKey({ name: 'HKDF', hash: 'SHA-256', salt: epk, info: new TextEncoder().encode('avidviewer-account:v1') },
+      hk, { name: 'AES-GCM', length: 256 }, false, ['decrypt']);
+    return JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: unb64(env.iv) }, key, unb64(env.ct))));
+  }
+  async function deviceLogins() {
+    return (await fetch('/api/account/device-logins', { credentials: 'same-origin' }).then(function (x) { return x.json(); })).items || [];
+  }
+  /** A device's login for an account playlist the account has no login for; or for a playlist added on that device. */
+  function deviceHas(p) { return S.devicePlaylists.filter(function (x) { return x.remoteId === p.id && x.hasLogin; }); }
+  /** Keeps, in the account, the logins devices sent for account playlists that had none. Returns how many. */
+  async function importFromDevices() {
+    var missing = S.playlists.filter(function (p) { return !p.kept && !p.removing && deviceHas(p).length; });
+    if (!missing.length) return 0;
+    var items = await deviceLogins();
+    var out = [];
+    for (var i = 0; i < missing.length; i++) {
+      var p = missing[i];
+      var it = items.find(function (x) { return x.remoteId === p.id; });
+      if (!it) continue;
+      try { out.push({ id: p.id, vault: await lockLogin(Object.assign(await openSealed(it.sealed), { name: p.name })) }); } catch (e) { if (e.code) throw e; }
+    }
+    if (out.length) {
+      var r = await post('/api/account/playlists/import', { items: out });
+      if (r._ok) S.pending = r.pending || S.pending;
+      out.forEach(function (o) { var q = pl(o.id); if (q) q.kept = true; });
+    }
+    return out.length;
+  }
+  /** Everything a passkey unlock can do now: keep logins from devices, then send logins to devices waiting for one. */
+  async function syncLogins() {
+    await accountPrivate();
+    var kept = await importFromDevices();
+    var left = await sendPending();
+    return { kept: kept, left: left };
+  }
+  /** Plain words for what a device reported when it couldn't add a playlist. */
+  function friendly(err) {
+    if (!err) return 'the device refused it';
+    if (/handshake|ssl|certificate|tls/i.test(err)) return 'the device couldn\'t make a secure connection to the server. Check the server address (http:// or https://, as your provider gave it) and edit the playlist if it\'s wrong';
+    return err;
+  }
+
   /** Locks the saved logins for every device waiting for one; returns what's left to do by hand. */
   async function sendPending() {
     var left = [];
@@ -163,32 +231,44 @@
 
   function renderPending() {
     var box = $('mg-pending'); box.innerHTML = '';
-    if (!S.pending.length) return;
     var b = el('section', 'mg-banner');
+    var importable = S.playlists.filter(function (p) { return !p.kept && !p.removing && deviceHas(p).length; });
     var kept = S.pending.filter(function (p) { return p.kept; });
-    var typed = S.pending.filter(function (p) { return !p.kept; });
-    if (kept.length) {
-      add(b, el('p', null, 'Waiting for a login: ' + kept.map(function (p) { return p.playlist + ' on ' + p.device; }).join(', ') +
-        '. Unlock your saved logins with your passkey to send them.'));
-      var go = btn('Unlock with passkey and send', 'btn btn-primary', async function () {
+    var typed = S.pending.filter(function (p) { return !p.kept && !importable.some(function (q) { return q.id === p.playlistId; }); });
+    function unlockBtn(label) {
+      var go = btn(label, 'btn btn-primary', async function () {
         go.disabled = true; say('Unlocking…');
-        try { var left = await sendPending(); say(left.length ? '' : 'Sent. The devices pick them up within a minute.'); await load(); }
-        catch (e) { say(VAULT_TEXT[e.code] || e.message, true); go.disabled = false; }
+        try {
+          var r = await syncLogins();
+          say(r.kept ? 'Kept ' + r.kept + (r.kept === 1 ? ' login' : ' logins') + ' in your account' + (S.pending.length ? ' and sent the logins devices were waiting for.' : '.')
+            : 'Done. Devices pick up changes within a minute while Avid Viewer is open.');
+          await load();
+        } catch (e) { say(VAULT_TEXT[e.code] || e.message, true); go.disabled = false; }
       });
-      b.appendChild(go);
+      return go;
+    }
+    if (!S.vault.length || !S.accountKey) {
+      add(b, el('h3', null, 'Keep your logins in your account'),
+        el('p', null, 'Set this up once with your passkey. Then your devices send the logins they have (locked so only your browser can open them), new devices get logins without typing, and Edit can show a saved login. The website itself can never read them.'),
+        unlockBtn(S.vault.length ? 'Unlock with passkey' : 'Set up with passkey'));
+    } else if (importable.length || kept.length) {
+      var lines = [];
+      if (importable.length) lines.push('Logins for ' + names(importable.map(function (p) { return p.name; })) + ' are ready from ' +
+        names(Array.from(new Set(importable.map(function (p) { return (dev(deviceHas(p)[0].deviceId) || {}).name; })))) + '.');
+      if (kept.length) lines.push('Waiting for a login: ' + kept.map(function (p) { return p.playlist + ' on ' + p.device; }).join(', ') + '.');
+      add(b, el('p', null, lines.join(' ') + ' Unlock with your passkey to keep them in your account and send them.'), unlockBtn('Unlock with passkey'));
     }
     if (typed.length) {
       var uniq = {};
       typed.forEach(function (p) { (uniq[p.playlistId] = uniq[p.playlistId] || { name: p.playlist, devs: [] }).devs.push(p.device); });
       Object.keys(uniq).forEach(function (id) {
-        var row = el('p', null, uniq[id].name + ' was saved before logins were kept in your account, so ' + names(uniq[id].devs) +
-          ' needs it typed once more. ');
+        var row = el('p', null, 'No device has sent a login for ' + uniq[id].name + ' yet, so ' + names(uniq[id].devs) +
+          ' is waiting. Open Avid Viewer on a device that has it, or type it once: ');
         var a = el('a', null, 'Edit ' + uniq[id].name); a.href = '/playlists/#edit=' + id;
-        a.addEventListener('click', function () { if (PAGE === 'playlists') setTimeout(route, 0); });
         add(b, add(row, a));
       });
     }
-    box.appendChild(b);
+    if (b.childNodes.length) box.appendChild(b);
   }
 
   // ------------------------------------------------------------ loading
@@ -246,7 +326,7 @@
   function targetText(t) {
     if (t.status === 'needs_login') return 'waiting for the login';
     if (t.status === 'needs_update') return 'needs Avid Viewer 1.15.0';
-    if (t.status === 'failed') return 'couldn\'t add it: ' + (t.error || 'the device refused it');
+    if (t.status === 'failed') return 'couldn\'t add it: ' + friendly(t.error);
     if (t.status === 'waiting') return t.action === 'remove' ? 'removing at the next check-in' : 'waiting for the device to open';
     return 'up to date';
   }
@@ -257,24 +337,89 @@
     var t = el('table', 'mg-table');
     t.innerHTML = '<thead><tr><th>Playlist</th><th>Type</th><th>Profiles</th><th>On devices</th><th>In use</th><th></th></tr></thead>';
     var tb = el('tbody');
-    if (!S.playlists.length) { var r0 = el('tr'); var c0 = el('td', 'soft', 'No playlists yet. Add one, then give it to profiles.'); c0.colSpan = 6; tb.appendChild(add(r0, c0)); }
-    S.playlists.forEach(function (p) {
+    var shown = S.playlists.filter(function (p) { return !p.removing; });
+    if (!shown.length) { var r0 = el('tr'); var c0 = el('td', 'soft', 'No playlists yet. Add one, then give it to profiles.'); c0.colSpan = 6; tb.appendChild(add(r0, c0)); }
+    shown.forEach(function (p) {
       var tr = el('tr');
-      var n = el('td'); add(n, el('strong', null, p.name + (p.removing ? ' (removing)' : '')));
+      var n = el('td'); add(n, el('strong', null, p.name + (p.removing ? ' (removing)' : '')), el('div', 'soft', catalogText(p)));
       var chips = el('td');
       if (!p.profiles.length) chips.appendChild(el('span', 'soft', 'Not given to a profile yet'));
       p.profiles.forEach(function (id) { var q = prof(id); if (q) chips.appendChild(el('span', 'mg-chip' + (q.kids ? ' kids' : ''), q.name)); });
       var live = p.targets.filter(function (x) { return x.action !== 'remove'; });
       var wait = live.filter(function (x) { return x.status !== 'done'; });
       var dv = el('td', null, live.length ? live.length + (live.length === 1 ? ' device' : ' devices') : '—');
-      if (live.length) dv.appendChild(el('div', 'soft', wait.length ? wait.map(function (x) { return (dev(x.deviceId) || {}).name + ' ' + targetText(x); }).join('; ') : 'up to date'));
+      live.forEach(function (x) { dv.appendChild(el('div', 'soft', (dev(x.deviceId) || {}).name + ': ' + targetText(x))); });
       var streams = S.devices.filter(function (d) { return d.playing && d.playing.playlistId === p.id; }).length;
-      var edit = el('td'); if (!p.removing) edit.appendChild(btn('Edit', 'linkish', function () { go('#edit=' + p.id); }));
+      var edit = el('td', 'mg-acts');
+      if (!p.removing) add(edit, btn('Edit', 'linkish', function () { go('#edit=' + p.id); }), btn('Remove', 'linkish mg-danger', function () { removePlaylist(p); }));
       add(tr, n, el('td', null, p.type === 'm3u' ? 'M3U link' : 'Xtream Codes'), chips, dv, el('td', null, streams ? streams + (streams === 1 ? ' stream' : ' streams') : 'No'), edit);
       tb.appendChild(tr);
     });
     add(b, add(t, tb));
+    // Removed playlists leave the list at once; a device that hasn't checked in since still has to drop its copy.
+    var going = S.playlists.filter(function (p) { return p.removing; });
+    if (going.length) add(b, el('p', 'fineprint', 'Removed from your account and still on a device until its next check-in: ' + going.map(function (p) {
+      return p.name + ' (' + names(p.targets.map(function (x) { return (dev(x.deviceId) || {}).name; }).filter(Boolean)) + ')';
+    }).join('; ') + '.'));
+    add(b, tvPlaylists());
     add(b, el('p', 'fineprint', 'On devices counts the devices that have at least one profile with the playlist. Logins are never shown after they\'re saved: they\'re locked so only your passkey and your devices can open them. Avid Viewer is a media player and doesn\'t provide any content; add only playlists you have the rights to.'));
+  }
+
+  function catalogText(p) {
+    var c = p.catalog;
+    if (c && !c.none) {
+      var t = 'Live TV: ' + c.live + ' categories, ' + Number(c.channels).toLocaleString() + ' channels · Movies: ' + c.movie + ' · Series: ' + c.series +
+        ' categories (from ' + c.device + ', ' + new Date(c.updated_at).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) + ')';
+      if (!c.movie && !c.series) t += '. No movies or series: the playlist has none, or no device has opened Movies or Series with it yet.';
+      return t;
+    }
+    var failed = p.targets.find(function (x) { return x.status === 'failed'; });
+    if (failed) return 'No categories yet: ' + (dev(failed.deviceId) || {}).name + ' couldn\'t add it (' + friendly(failed.error) + ').';
+    var on = p.targets.find(function (x) { return x.status === 'done' && x.action !== 'remove'; });
+    if (on) return 'No categories yet: they arrive within a minute of opening Avid Viewer on ' + (dev(on.deviceId) || {}).name + '.';
+    return 'No categories yet: no device has this playlist yet.';
+  }
+  async function removePlaylist(p) {
+    if (!confirm('Remove "' + p.name + '" from your account? It comes off every profile, and every device removes it at its next check-in. A copy added on a TV by hand stays there.')) return;
+    var r = await post('/api/account/playlists/remove', { id: p.id });
+    say(r._ok ? 'Removed ' + p.name + '. Devices remove it within a minute while Avid Viewer is open.' : r.error, !r._ok);
+    go('#'); load();
+  }
+
+  /** Playlists typed in on a TV (1.15.1): listed with their device, and "Add to account" without retyping. */
+  function tvPlaylists() {
+    var mine = S.devicePlaylists.filter(function (x) { return !x.remoteId && dev(x.deviceId); });
+    var old = S.devices.filter(function (d) { return !d.managed; });
+    if (!mine.length && !old.length) return null;
+    var s = el('section', 'mg-card');
+    add(s, el('h2', null, 'Added on your devices'), el('p', 'fineprint', 'Playlists typed in with the remote. Add one to your account to give it to profiles and other devices; the device keeps its copy and everything in it.'));
+    var ul = el('ul', 'rows');
+    mine.forEach(function (x) {
+      var d = dev(x.deviceId);
+      var li = el('li');
+      add(li, el('span', null, x.name), el('span', 'soft', (x.type === 'm3u' ? 'M3U link' : 'Xtream Codes') + ' · on ' + d.name + (x.enabled ? '' : ' · switched off')));
+      var why = !d.profiles.length ? 'Choose this device\'s profiles first (Devices page)'
+        : !S.accountKey ? 'Set up locked logins (above) first'
+        : !x.hasLogin ? 'Waiting for ' + d.name + ' to send its login (open Avid Viewer on it)' : null;
+      if (why) li.appendChild(el('span', 'soft', why));
+      else li.appendChild(btn('Add to account', 'btn btn-ghost btn-sm', async function (e) {
+        var b0 = e.target; b0.disabled = true; say('Unlocking…');
+        try {
+          var it = (await deviceLogins()).find(function (y) { return y.deviceId === x.deviceId && y.localId === x.localId; });
+          if (!it) throw new Error('The device hasn\'t sent this login yet. Open Avid Viewer on it and try again in a minute.');
+          var login = Object.assign(await openSealed(it.sealed), { name: x.name });
+          var r = await post('/api/account/playlists/adopt', { deviceId: x.deviceId, localId: x.localId, name: x.name, vault: await lockLogin(login) });
+          if (!r._ok) throw new Error(r.error);
+          S.pending = r.pending || [];
+          await sendPending();
+          say(x.name + ' is in your account now, for the profiles on ' + d.name + '. Other devices with those profiles get it within a minute.');
+          await load();
+        } catch (err) { b0.disabled = false; say(VAULT_TEXT[err.code] || err.message, true); }
+      }));
+      ul.appendChild(li);
+    });
+    old.forEach(function (d) { ul.appendChild(add(el('li'), el('span', null, d.name), el('span', 'soft', (d.appVersion ? 'On Avid Viewer ' + d.appVersion + ': u' : 'U') + 'pdate it to 1.15.1 to see its playlists here'))); });
+    return add(s, ul);
   }
 
   function playlistEditor(p) {
@@ -298,7 +443,28 @@
     var m3u = field('M3U link', 'url', '', { placeholder: 'https://…/playlist.m3u', autocomplete: 'off', spellcheck: 'false' });
     var epg = field('Guide (XMLTV) link, optional', 'url', '', { placeholder: p ? 'Leave empty to keep the current one' : 'https://…/guide.xml.gz', autocomplete: 'off', spellcheck: 'false' });
     function showType() { xt.hidden = type !== 'xtream'; m3u.hidden = type !== 'm3u'; }
-    add(f, seg, name, p ? keep : null, xt, m3u, epg);
+    function fill(l) {
+      if (l.type === 'm3u' || l.type === 'xtream') { type = l.type; seg.querySelectorAll('input').forEach(function (r) { r.checked = r.value === type; }); showType(); }
+      server.input.value = l.server || ''; user.input.value = l.username || ''; pass.input.value = l.password || '';
+      m3u.input.value = l.m3uUrl || ''; epg.input.value = l.epgUrl || '';
+      keep.textContent = 'The saved login is shown. Change it and Save, or Cancel to leave it as it is.';
+    }
+    var show = null;
+    if (p && p.kept) show = btn('Show the saved login', 'btn btn-ghost btn-sm', async function () {
+      show.disabled = true;
+      try { var r0 = await fetch('/api/account/playlists/vault?id=' + encodeURIComponent(p.id), { credentials: 'same-origin' }).then(function (x) { return x.json(); });
+        fill(await openLogin(r0.vault)); show.hidden = true; say(''); }
+      catch (e) { show.disabled = false; say(VAULT_TEXT[e.code] || e.message, true); }
+    });
+    else if (p && deviceHas(p).length && S.accountKey) {
+      var from = dev(deviceHas(p)[0].deviceId) || {};
+      show = btn('Fill in from ' + from.name, 'btn btn-ghost btn-sm', async function () {
+        show.disabled = true;
+        try { var it = (await deviceLogins()).find(function (y) { return y.remoteId === p.id; }); fill(await openSealed(it.sealed)); show.hidden = true; say(''); }
+        catch (e) { show.disabled = false; say(VAULT_TEXT[e.code] || e.message, true); }
+      });
+    }
+    add(f, seg, name, p ? keep : null, show, xt, m3u, epg);
     showType();
     add(f, el('h3', null, 'Give it to profiles'));
     var chosen = p ? p.profiles.slice() : [];
@@ -317,10 +483,7 @@
     var btns = el('div', 'row-btns');
     var save = el('button', 'btn btn-primary', p ? 'Save' : 'Add playlist'); save.type = 'submit';
     add(btns, save, btn('Cancel', 'btn btn-ghost', function () { go('#'); }));
-    if (p) btns.appendChild(btn('Remove playlist', 'btn btn-danger', async function () {
-      if (!confirm('Remove "' + p.name + '"? It comes off every profile and every device.')) return;
-      await post('/api/account/playlists/remove', { id: p.id }); go('#'); load();
-    }));
+    if (p) btns.appendChild(btn('Remove from account', 'btn btn-danger', function () { removePlaylist(p); }));
     add(f, btns);
     if (p && p.targets.length) {
       add(f, el('h3', null, 'Where it is now'));

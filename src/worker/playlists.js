@@ -52,19 +52,22 @@ async function tvReport(request, env) {
 async function tvInbox(request, env, url) {
   const [d, no] = await tvDevice(request, env); if (no) return no;
   const r = await env.DB.prepare(
-    `SELECT t.playlist_id, t.action, t.payload, t.profiles, t.version, p.name, p.type FROM playlist_targets t
+    `SELECT t.playlist_id, t.action, t.payload, t.profiles, t.version, t.local_id, p.name, p.type FROM playlist_targets t
        JOIN account_playlists p ON p.id = t.playlist_id WHERE t.device_id = ?1 AND t.status = 'waiting' ORDER BY t.updated_at LIMIT 20`
   ).bind(d.id).all();
   await env.DB.prepare('UPDATE devices SET last_seen = ?1 WHERE id = ?2').bind(Date.now(), d.id).run();
   const out = { items: r.results.map((x) => ({
     playlistId: x.playlist_id, action: x.action, version: x.version, name: x.name, type: x.type,
     profiles: x.profiles ? JSON.parse(x.profiles) : null, payload: x.payload ? JSON.parse(x.payload) : null,
+    ...(x.local_id ? { localId: x.local_id } : {}),
   })) };
   if (d.managed_at) {
     // The device's profiles (1.15.0), only when they changed since the hash it has.
     const { list, hash } = await deviceProfiles(env, d.id);
     out.managed = true;
     out.profilesHash = hash;
+    const ak = await env.DB.prepare('SELECT pubkey FROM account_keys WHERE user_id = ?1').bind(d.user_id).first();
+    if (ak) out.accountKey = ak.pubkey;
     if (url?.searchParams.get('ph') !== hash) out.profiles = list;
   }
   return json(out);

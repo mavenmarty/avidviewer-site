@@ -308,3 +308,8 @@ button.btn-ghost { background: transparent; color: var(--text); }
 .mg-playing { align-items: center !important; }
 .btn-sm { padding: 8px 14px; font-size: 14px; }
 .mg h4 { font-size: 13px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+
+.mg-acts { white-space: nowrap; }
+.mg-acts .linkish + .linkish { margin-left: 14px; }
+.linkish.mg-danger { color: #F2A79B; }
+.mg-banner h3 { font-size: 18px; color: var(--text); }

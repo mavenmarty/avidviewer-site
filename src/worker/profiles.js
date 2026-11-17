@@ -252,7 +252,31 @@ async function tvPlaying(request, env) {
   return json({ ok: true, stop: false });
 }
 
+const SEALED_MAX = 4000;
+const sealedEnv = (x) => x && typeof x === 'object' && x.v === 1 && typeof x.epk === 'string' && typeof x.iv === 'string' && typeof x.ct === 'string'
+  && JSON.stringify(x).length <= SEALED_MAX;
+
+/** Every playlist on this device (1.15.1): replaces what it reported before. */
+async function tvPlaylists(request, env) {
+  const [d, no] = await tvDevice(request, env); if (no) return no;
+  const b = await body(request);
+  const list = Array.isArray(b?.playlists) ? b.playlists.slice(0, 100) : [];
+  const now = Date.now();
+  const stmts = [env.DB.prepare('DELETE FROM device_playlists WHERE device_id = ?1').bind(d.id)];
+  for (const x of list) {
+    const id = clip(String(x?.id ?? ''), 60);
+    if (!id) continue;
+    stmts.push(env.DB.prepare(`INSERT OR REPLACE INTO device_playlists (device_id, local_id, user_id, name, type, enabled, live, vod, remote_id, sealed, updated_at)
+      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)`).bind(d.id, id, d.user_id, clip(x?.name, 60) || 'Playlist', x?.type === 'm3u' ? 'm3u' : 'xtream',
+      x?.enabled === false ? 0 : 1, x?.live === false ? 0 : 1, x?.vod === false ? 0 : 1, clip(x?.remoteId, 40) || null,
+      sealedEnv(x?.sealed) ? JSON.stringify(x.sealed) : null, now));
+  }
+  await env.DB.batch(stmts);
+  return json({ ok: true });
+}
+
 export async function handleProfileTvApi(request, env, p) {
+  if (p === '/api/tv/playlists' && request.method === 'POST') return tvPlaylists(request, env);
   if (p === '/api/tv/catalog' && request.method === 'POST') return tvCatalog(request, env);
   if (p === '/api/tv/playing' && request.method === 'POST') return tvPlaying(request, env);
   return null;
@@ -281,6 +305,14 @@ export async function manage(env, user) {
     env.DB.prepare('SELECT playlist_id, updated_at FROM playlist_catalogs WHERE user_id = ?1').bind(uid).all(),
     env.DB.prepare('SELECT credential_id, wrapped FROM vault_keys WHERE user_id = ?1').bind(uid).all(),
   ]);
+  const [dpl, akey, csum] = await Promise.all([
+    env.DB.prepare(`SELECT device_id, local_id, name, type, enabled, live, vod, remote_id, sealed IS NOT NULL AS has_login, updated_at
+      FROM device_playlists WHERE user_id = ?1 AND device_id IN (SELECT id FROM devices WHERE user_id = ?1 AND revoked_at IS NULL) ORDER BY name`).bind(uid).all(),
+    env.DB.prepare('SELECT pubkey, wrapped FROM account_keys WHERE user_id = ?1').bind(uid).first(),
+    env.DB.prepare(`SELECT playlist_id, updated_at, json_extract(data, '$.device') AS device, json_array_length(data, '$.live') AS live,
+      (SELECT COALESCE(SUM(json_extract(value, '$.c')), 0) FROM json_each(data, '$.live')) AS channels,
+      json_array_length(data, '$.movie') AS movie, json_array_length(data, '$.series') AS series FROM playlist_catalogs WHERE user_id = ?1`).bind(uid).all(),
+  ]);
   return json({
     devices: devs.results.map((d) => ({
       id: d.id, name: d.name, model: d.model, appVersion: d.app_version, pubkey: d.pubkey || null, managed: Boolean(d.managed_at),
@@ -292,6 +324,7 @@ export async function manage(env, user) {
       id: p.id, name: p.name, type: p.type, updatedAt: p.updated_at, removing: Boolean(p.removing), kept: Boolean(p.kept),
       profiles: pp.results.filter((x) => x.playlist_id === p.id).map((x) => x.profile_id),
       catalogAt: cats.results.find((c) => c.playlist_id === p.id)?.updated_at || null,
+      catalog: (({ playlist_id, ...c }) => c)(csum.results.find((c) => c.playlist_id === p.id) || { playlist_id: 0, none: true }),
       targets: ts.results.filter((t) => t.playlist_id === p.id).map((t) => ({
         deviceId: t.device_id, profiles: t.profiles ? JSON.parse(t.profiles) : null, action: t.action, status: t.status, error: t.error, updatedAt: t.updated_at,
       })),
@@ -303,6 +336,11 @@ export async function manage(env, user) {
       visibility: Object.fromEntries(vis.results.filter((v) => v.profile_id === p.id).map((v) => [v.playlist_id, JSON.parse(v.data)])),
     })),
     vault: keys.results.map((k) => ({ credentialId: k.credential_id, wrapped: k.wrapped })),
+    accountKey: akey ? { pubkey: akey.pubkey, wrapped: akey.wrapped } : null,
+    devicePlaylists: dpl.results.map((x) => ({
+      deviceId: x.device_id, localId: x.local_id, name: x.name, type: x.type, enabled: Boolean(x.enabled), live: Boolean(x.live), vod: Boolean(x.vod),
+      remoteId: x.remote_id || null, hasLogin: Boolean(x.has_login), updatedAt: x.updated_at,
+    })),
     pending: await pendingLogins(env, uid),
   });
 }
@@ -448,3 +486,66 @@ export async function vaultKey(request, env, user) {
 }
 
 export { missingPins };
+
+/** The account's key pair, made in the browser at vault setup; only the first one is kept. */
+export async function accountKeySave(request, env, user) {
+  const b = await body(request);
+  const pub = typeof b?.pubkey === 'string' && /^[A-Za-z0-9+/]{86}[A-Za-z0-9+/=]{2}$/.test(b.pubkey) ? b.pubkey : null;
+  const wrapped = typeof b?.wrapped === 'string' && /^[A-Za-z0-9+/=]{100,2000}$/.test(b.wrapped) ? b.wrapped : null;
+  if (!pub || !wrapped) return json({ error: "That key wasn't made correctly." }, 400);
+  await env.DB.prepare('INSERT OR IGNORE INTO account_keys (user_id, pubkey, wrapped, created_at) VALUES (?1, ?2, ?3, ?4)')
+    .bind(user.id, pub, wrapped, Date.now()).run();
+  const row = await env.DB.prepare('SELECT pubkey, wrapped FROM account_keys WHERE user_id = ?1').bind(user.id).first();
+  return json({ ok: true, accountKey: row });
+}
+
+/** The logins devices locked for the account key (opened only in the owner's browser). */
+export async function deviceLogins(env, user) {
+  const r = await env.DB.prepare(`SELECT device_id, local_id, remote_id, sealed FROM device_playlists WHERE user_id = ?1 AND sealed IS NOT NULL
+      AND device_id IN (SELECT id FROM devices WHERE user_id = ?1 AND revoked_at IS NULL)`).bind(user.id).all();
+  return json({ items: r.results.map((x) => ({ deviceId: x.device_id, localId: x.local_id, remoteId: x.remote_id, sealed: JSON.parse(x.sealed) })) });
+}
+
+/** Keeps logins for account playlists that had none (from a device, opened and locked again in the browser). */
+export async function playlistsImport(request, env, user) {
+  const b = await body(request);
+  const items = Array.isArray(b?.items) ? b.items.slice(0, 100) : [];
+  const stmts = [];
+  for (const it of items) {
+    if (typeof it?.vault !== 'string' || !/^[A-Za-z0-9+/=]{40,20000}$/.test(it.vault)) continue;
+    stmts.push(env.DB.prepare('UPDATE account_playlists SET vault = ?1 WHERE id = ?2 AND user_id = ?3 AND vault IS NULL')
+      .bind(it.vault, clip(it.id, 40), user.id));
+  }
+  if (stmts.length) await env.DB.batch(stmts);
+  return json({ ok: true, pending: await pendingLogins(env, user.id) });
+}
+
+/**
+ * "Add to account": a playlist added on a device becomes an account playlist, given to that device's profiles. The device
+ * keeps its copy (and everything about it) and just learns which account playlist it is; other devices with those
+ * profiles then get it like any account playlist.
+ */
+export async function playlistsAdopt(request, env, user) {
+  const b = await body(request);
+  const devId = clip(b?.deviceId, 40), localId = clip(b?.localId, 60);
+  const row = await env.DB.prepare(`SELECT dp.name, dp.type, dp.remote_id FROM device_playlists dp JOIN devices d ON d.id = dp.device_id
+      WHERE dp.device_id = ?1 AND dp.local_id = ?2 AND dp.user_id = ?3 AND d.revoked_at IS NULL AND d.managed_at IS NOT NULL`).bind(devId, localId, user.id).first();
+  if (!row) return json({ error: 'That playlist is no longer on the device, or the device needs Avid Viewer 1.15.1.' }, 404);
+  if (row.remote_id) return json({ error: 'It is already in your account.' }, 400);
+  if (typeof b?.vault !== 'string' || !/^[A-Za-z0-9+/=]{40,20000}$/.test(b.vault)) return json({ error: "The login wasn't locked correctly. Reload the page and try again." }, 400);
+  const profs = (await env.DB.prepare('SELECT profile_id FROM device_profiles WHERE device_id = ?1').bind(devId).all()).results.map((r) => r.profile_id);
+  if (!profs.length) return json({ error: 'Choose at least one profile for this device first (Devices page), so the playlist has profiles to go to.' }, 400);
+  const name = clip(b?.name, 60) || row.name;
+  const taken = await env.DB.prepare('SELECT 1 FROM account_playlists WHERE user_id = ?1 AND lower(name) = lower(?2) AND removing = 0').bind(user.id, name).first();
+  if (taken) return json({ error: `Your account already has a playlist called ${name}. Rename one first.` }, 400);
+  const id = randomToken(12);
+  const now = Date.now();
+  const stmts = [env.DB.prepare('INSERT INTO account_playlists (id, user_id, name, type, vault, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)')
+    .bind(id, user.id, name, row.type, b.vault, now)];
+  for (const pid of profs) stmts.push(env.DB.prepare('INSERT INTO profile_playlists (profile_id, playlist_id, user_id) VALUES (?1, ?2, ?3)').bind(pid, id, user.id));
+  stmts.push(env.DB.prepare(`INSERT INTO playlist_targets (playlist_id, device_id, user_id, profiles, action, payload, version, status, error, updated_at, local_id)
+    VALUES (?1, ?2, ?3, ?4, 'update', NULL, 1, 'waiting', NULL, ?5, ?6)`).bind(id, devId, user.id, JSON.stringify(profs.slice().sort()), now, localId));
+  stmts.push(env.DB.prepare('UPDATE device_playlists SET remote_id = ?1 WHERE device_id = ?2 AND local_id = ?3').bind(id, devId, localId));
+  await env.DB.batch(stmts);
+  return json({ ok: true, id, pending: await reconcile(env, user.id) });
+}

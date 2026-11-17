@@ -313,6 +313,7 @@ export async function deviceRemove(request, env, user) {
   await env.DB.prepare('UPDATE devices SET revoked_at = ?1 WHERE id = ?2 AND user_id = ?3 AND revoked_at IS NULL')
     .bind(Date.now(), String(b?.id || ''), user.id).run();
   await env.DB.prepare('DELETE FROM device_profiles WHERE device_id = ?1 AND user_id = ?2').bind(String(b?.id || ''), user.id).run();
+  await env.DB.prepare('DELETE FROM device_playlists WHERE device_id = ?1 AND user_id = ?2').bind(String(b?.id || ''), user.id).run();
   return json({ ok: true });
 }
 
