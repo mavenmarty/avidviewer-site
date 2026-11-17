@@ -437,6 +437,17 @@
       r.addEventListener('change', function () { type = x[0]; showType(); }); add(seg, add(l, r, document.createTextNode(' ' + x[1])));
     });
     var name = field('Name', 'text', p ? p.name : '', { maxlength: '60', placeholder: 'My provider' });
+    if (!p) {
+      // Already typed on a device? Adding it here too would be a second copy there: point to Add to account.
+      var twin = el('p', 'mg-warn'); twin.hidden = true;
+      name.input.addEventListener('input', function () {
+        var n = name.input.value.trim().toLowerCase();
+        var on = S.devicePlaylists.filter(function (x) { return !x.remoteId && n && x.name.toLowerCase() === n; });
+        twin.hidden = !on.length;
+        if (on.length) twin.textContent = name.input.value.trim() + ' is already on ' + names(on.map(function (x) { return (dev(x.deviceId) || {}).name; })) +
+          ', typed there. Use Add to account under Added on your devices instead, so it keeps its favorites and isn\'t added twice.';
+      });
+    }
     var keep = el('p', 'soft', p ? (p.kept ? 'The saved login isn\'t shown. Leave these empty to keep it; type it again only to change it.'
       : 'This playlist was saved before logins were kept in your account. Type its login once more so new devices can get it.') : '');
     var server = field('Server', 'url', '', { placeholder: 'http://server.example:8080', autocomplete: 'off', autocapitalize: 'off', spellcheck: 'false' });
@@ -467,7 +478,7 @@
         catch (e) { show.disabled = false; say(VAULT_TEXT[e.code] || e.message, true); }
       });
     }
-    add(f, seg, name, p ? keep : null, show, xt, m3u, epg);
+    add(f, seg, name, p ? null : twin, p ? keep : null, show, xt, m3u, epg);
     showType();
     add(f, el('h3', null, 'Give it to profiles'));
     var chosen = p ? p.profiles.slice() : [];
