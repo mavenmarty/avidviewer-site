@@ -19,6 +19,7 @@
 import { playlistsSave, playlistsSeal, playlistsRemove, playlistVault } from './playlists.js';
 import { attention, attentionDismiss, playlistsRetry } from './attention.js';
 import { listsGet, listsSave, orderGet, orderSave } from './lists.js';
+import { historyGet, historyPut, historyKeySave, historyDevices, historySeal, profileHistory, clearAllHistory, discoverSave, tmdbSave } from './history.js';
 import { manage, catalogFor, profileSave, profileRemove, profilePin, profileVisibility, deviceSetProfiles, deviceStop, vaultKey, accountKeySave, deviceLogins, playlistsImport, playlistsAdopt } from './profiles.js';
 import {
   generateRegistrationOptions, verifyRegistrationResponse,
@@ -310,6 +311,8 @@ async function settings(request, env, user) {
   const b = await body(request);
   if (typeof b?.watchHistory !== 'boolean') return json({ error: 'Nothing to change.' }, 400);
   await env.DB.prepare('UPDATE users SET watch_history = ?1 WHERE id = ?2').bind(b.watchHistory ? 1 : 0, user.id).run();
+  // Off: every TV keeps its own places, and what the account held is deleted (decision 15).
+  if (!b.watchHistory) await clearAllHistory(env, user.id);
   return json({ ok: true });
 }
 
@@ -345,6 +348,10 @@ async function deleteAccount(request, env, user) {
     env.DB.prepare('DELETE FROM account_keys WHERE user_id = ?1').bind(user.id),
     env.DB.prepare('DELETE FROM attention_dismissed WHERE user_id = ?1').bind(user.id),
     env.DB.prepare('DELETE FROM profile_lists WHERE user_id = ?1').bind(user.id),
+    env.DB.prepare('DELETE FROM profile_history WHERE user_id = ?1').bind(user.id),
+    env.DB.prepare('DELETE FROM profile_discover WHERE user_id = ?1').bind(user.id),
+    env.DB.prepare('DELETE FROM account_secrets WHERE user_id = ?1').bind(user.id),
+    env.DB.prepare('DELETE FROM device_history_keys WHERE user_id = ?1').bind(user.id),
     env.DB.prepare('DELETE FROM playlist_order WHERE user_id = ?1').bind(user.id),
     env.DB.prepare('DELETE FROM device_playlists WHERE user_id = ?1').bind(user.id),
     env.DB.prepare('DELETE FROM account_playlists WHERE user_id = ?1').bind(user.id),
@@ -371,7 +378,7 @@ export async function handleAccountApi(request, env, realUrl) {
     // (wrangler dev rewrites the Origin header to the real site's address, so that one is accepted locally too.)
     const origin = request.headers.get('origin');
     if (origin !== url.origin && origin !== realUrl.origin) return json({ error: 'Not allowed.' }, 403);
-  } else if (!(request.method === 'GET' && (p === '/api/me' || p === '/api/account/manage' || p === '/api/account/catalog' || p === '/api/account/playlists/vault' || p === '/api/account/device-logins' || p === '/api/account/attention' || p === '/api/account/lists' || p === '/api/account/order' || p.startsWith('/api/admin/')))) {
+  } else if (!(request.method === 'GET' && (p === '/api/me' || p === '/api/account/manage' || p === '/api/account/catalog' || p === '/api/account/playlists/vault' || p === '/api/account/device-logins' || p === '/api/account/attention' || p === '/api/account/lists' || p === '/api/account/order' || p === '/api/account/history' || p === '/api/account/history/devices' || p.startsWith('/api/admin/')))) {
     return json({ error: 'Use POST.' }, 405);
   }
 
@@ -409,6 +416,14 @@ export async function handleAccountApi(request, env, realUrl) {
     case '/api/account/attention': return request.method === 'GET' ? attention(env, user) : json({ error: 'Use GET.' }, 405);
     case '/api/account/lists': return request.method === 'GET' ? listsGet(env, user, url) : listsSave(request, env, user);
     case '/api/account/order': return request.method === 'GET' ? orderGet(env, user, url) : orderSave(request, env, user);
+    case '/api/account/history': return historyGet(env, user, url);
+    case '/api/account/history/put': return historyPut(request, env, user);
+    case '/api/account/history/key': return historyKeySave(request, env, user);
+    case '/api/account/history/devices': return historyDevices(env, user);
+    case '/api/account/history/seal': return historySeal(request, env, user);
+    case '/api/account/profiles/history': return profileHistory(request, env, user);
+    case '/api/account/discover': return discoverSave(request, env, user);
+    case '/api/account/tmdb': return tmdbSave(request, env, user);
     case '/api/account/attention/dismiss': return attentionDismiss(request, env, user);
     case '/api/account/playlists/retry': return playlistsRetry(request, env, user);
     case '/api/account/playlists/import': return playlistsImport(request, env, user);

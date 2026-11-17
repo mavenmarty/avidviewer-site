@@ -21,6 +21,7 @@
 
 import { json, body, randomToken, sha256hex } from './auth.js';
 import { deviceFor } from './devices.js';
+import { historySummary } from './history.js';
 
 const clip = (v, n) => (typeof v === 'string' ? v.trim().slice(0, n) : '');
 const PIN = /^[0-9a-f]{8,64}:[0-9a-f]{64}$/;
@@ -301,7 +302,7 @@ export async function manage(env, user) {
       WHERE user_id = ?1 AND revoked_at IS NULL ORDER BY created_at`).bind(uid).all(),
     env.DB.prepare('SELECT id, name, type, updated_at, removing, (vault IS NOT NULL) AS kept FROM account_playlists WHERE user_id = ?1 ORDER BY name').bind(uid).all(),
     env.DB.prepare('SELECT playlist_id, device_id, profiles, action, status, error, updated_at FROM playlist_targets WHERE user_id = ?1').bind(uid).all(),
-    env.DB.prepare('SELECT id, name, kids, parent, color, (pin IS NOT NULL) AS has_pin, sort FROM profiles WHERE user_id = ?1 ORDER BY sort, created_at').bind(uid).all(),
+    env.DB.prepare('SELECT id, name, kids, parent, color, (pin IS NOT NULL) AS has_pin, sort, history_off FROM profiles WHERE user_id = ?1 ORDER BY sort, created_at').bind(uid).all(),
     env.DB.prepare('SELECT profile_id, playlist_id FROM profile_playlists WHERE user_id = ?1').bind(uid).all(),
     env.DB.prepare('SELECT device_id, profile_id FROM device_profiles WHERE user_id = ?1').bind(uid).all(),
     env.DB.prepare('SELECT profile_id, playlist_id, data FROM profile_visibility WHERE user_id = ?1').bind(uid).all(),
@@ -333,7 +334,7 @@ export async function manage(env, user) {
       })),
     })),
     profiles: profs.results.map((p) => ({
-      id: p.id, name: p.name, kids: Boolean(p.kids), parent: Boolean(p.parent), color: p.color, hasPin: Boolean(p.has_pin),
+      id: p.id, name: p.name, kids: Boolean(p.kids), parent: Boolean(p.parent), color: p.color, hasPin: Boolean(p.has_pin), historyOff: Boolean(p.history_off),
       playlists: pp.results.filter((x) => x.profile_id === p.id).map((x) => x.playlist_id),
       devices: dp.results.filter((x) => x.profile_id === p.id).map((x) => x.device_id),
       visibility: Object.fromEntries(vis.results.filter((v) => v.profile_id === p.id).map((v) => [v.playlist_id, JSON.parse(v.data)])),
@@ -345,6 +346,8 @@ export async function manage(env, user) {
       remoteId: x.remote_id || null, hasLogin: Boolean(x.has_login), updatedAt: x.updated_at,
     })),
     pending: await pendingLogins(env, uid),
+    history: await historySummary(env, uid),
+    watchHistory: Boolean((await env.DB.prepare('SELECT watch_history FROM users WHERE id = ?1').bind(uid).first())?.watch_history),
   });
 }
 

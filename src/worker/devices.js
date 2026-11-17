@@ -17,6 +17,7 @@
 import { handlePlaylistTvApi } from './playlists.js';
 import { handleProfileTvApi } from './profiles.js';
 import { handleListsTvApi } from './lists.js';
+import { handleHistoryTvApi } from './history.js';
 import { json, randomToken, sha256hex, ipOf, body } from './auth.js';
 
 const ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // same as setup codes: no 0/O, 1/I/L
@@ -243,7 +244,7 @@ export async function handleTvApi(request, env, realUrl) {
   const url = env.SITE_ORIGIN ? new URL(realUrl.pathname + realUrl.search, env.SITE_ORIGIN) : realUrl; // local dev, as in auth.js
   const p = url.pathname;
   if (!p.startsWith('/api/tv/')) return null;
-  const pl = (await handlePlaylistTvApi(request, env, p, url)) || (await handleProfileTvApi(request, env, p)) || (await handleListsTvApi(request, env, p));
+  const pl = (await handlePlaylistTvApi(request, env, p, url)) || (await handleProfileTvApi(request, env, p)) || (await handleListsTvApi(request, env, p)) || (await handleHistoryTvApi(request, env, p));
   if (pl) return pl;
   if (p === '/api/tv/me') return request.method === 'GET' ? tvMe(request, env) : json({ error: 'Use GET.' }, 405);
   if (p === '/api/tv/backups') return request.method === 'GET' ? tvBackupList(request, env) : json({ error: 'Use GET.' }, 405);
@@ -314,6 +315,7 @@ export async function deviceRemove(request, env, user) {
   await env.DB.prepare('UPDATE devices SET revoked_at = ?1 WHERE id = ?2 AND user_id = ?3 AND revoked_at IS NULL')
     .bind(Date.now(), String(b?.id || ''), user.id).run();
   await env.DB.prepare('DELETE FROM device_profiles WHERE device_id = ?1 AND user_id = ?2').bind(String(b?.id || ''), user.id).run();
+  await env.DB.prepare('DELETE FROM device_history_keys WHERE device_id = ?1 AND user_id = ?2').bind(String(b?.id || ''), user.id).run();
   await env.DB.prepare('DELETE FROM device_playlists WHERE device_id = ?1 AND user_id = ?2').bind(String(b?.id || ''), user.id).run();
   return json({ ok: true });
 }

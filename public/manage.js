@@ -199,6 +199,7 @@
   /** Everything a passkey unlock can do now: keep logins from devices, then send logins to devices waiting for one. */
   async function syncLogins() {
     await accountPrivate();
+    try { await historyKey(); } catch (e) { if (e.code) throw e; }
     var kept = await importFromDevices();
     var left = await sendPending();
     return { kept: kept, left: left };
@@ -298,6 +299,7 @@
       if (m && m[1] === 'manage' && prof(sub[0])) return profileManager(prof(sub[0]), sub[1] || '');
       if (m && m[1] === 'finish' && prof(m[2])) return kidsPins(prof(m[2]));
       if (m && m[1] === 'new') return newProfile();
+      if (h === 'history') return historyUnlockPage();
       return profilesPage();
     }
     if (PAGE === 'devices') return devicesPage();
@@ -698,8 +700,10 @@
     b.insertBefore(back('Profiles', '#'), b.firstChild);
     var on = q.devices.map(function (id) { return (dev(id) || {}).name; }).filter(Boolean);
     b.querySelector('.page-head').appendChild(el('p', 'soft', roleText(q) + (on.length ? ' · on ' + names(on) : ' · not on a device yet')));
-    b.appendChild(subTabs([['Overview', '#manage=' + q.id, ''], ['What ' + q.name + ' can see', '#manage=' + q.id + '/see', 'see'], ['Favorites & lists', '#manage=' + q.id + '/lists', 'lists']], tab));
+    b.appendChild(subTabs([['Overview', '#manage=' + q.id, ''], ['What ' + q.name + ' can see', '#manage=' + q.id + '/see', 'see'], ['Favorites & lists', '#manage=' + q.id + '/lists', 'lists'], ['Watching', '#manage=' + q.id + '/watching', 'watching'], ['Discover', '#manage=' + q.id + '/discover', 'discover']], tab));
     if (tab === 'lists') return listsTab(q, b);
+    if (tab === 'watching') return watchingTab(q, b);
+    if (tab === 'discover') return discoverTab(q, b);
     if (tab !== 'see') {
 
     // Name, PIN and colour; playlists; devices.
@@ -831,6 +835,195 @@
       : 'Hidden categories and channels disappear from the guide, search, Favorites and Sports for this profile, on every device it\'s on.'),
       tabs, list, sv, el('p', 'fineprint', 'Names come from the playlist as ' + (cat.device || 'a device') + ' last downloaded it (' + new Date(r.updatedAt).toLocaleString() + ').'));
     draw();
+  }
+
+  // ------------------------------------------------------------ Pick up where you left off (1.17.0)
+  // What each profile watched, its Discover settings and the account's TMDB key are locked with a history key H that
+  // only the TVs and your passkey have. The browser makes H at the first unlock (wrapped with the vault key) and locks a
+  // copy for each linked device. Blobs: AES-GCM, base64(iv || ct), JSON inside.
+  var H = null, HRAW = null;
+  async function historyKey() {
+    if (H) return H;
+    var v = await unlock();
+    await accountPrivate(); // the account's key row must exist first
+    var wrapped = S.history && S.history.wrapped;
+    if (!wrapped) {
+      var raw = crypto.getRandomValues(new Uint8Array(32));
+      var r = await post('/api/account/history/key', { wrapped: await enc(v, raw) });
+      if (!r._ok) throw new Error(r.error || 'The key couldn’t be saved.');
+      wrapped = r.history; S.history = Object.assign(S.history || {}, { wrapped: wrapped });
+    }
+    HRAW = await dec(v, wrapped);
+    H = await aesKey(HRAW, ['encrypt', 'decrypt']);
+    await shareHistoryKey();
+    return H;
+  }
+  /** Locks the history key for every linked device that doesn't have it yet. Returns how many got it. */
+  async function shareHistoryKey() {
+    if (!HRAW) return 0;
+    var d = await getJson('/api/account/history/devices');
+    var items = [];
+    for (var i = 0; i < (d.devices || []).length; i++) items.push({ deviceId: d.devices[i].id, sealed: await seal(d.devices[i].pubkey, { historyKey: b64(HRAW) }) });
+    if (items.length) await post('/api/account/history/seal', { items: items });
+    if (S.history) S.history.devicesWaiting = 0;
+    if (items.length) window.dispatchEvent(new Event('avid:changed'));
+    return items.length;
+  }
+  async function hOpen(text) { return JSON.parse(new TextDecoder().decode(await dec(await historyKey(), text))); }
+  async function hLock(obj) { return enc(await historyKey(), new TextEncoder().encode(JSON.stringify(obj))); }
+  function clock(ms) {
+    var s = Math.max(0, Math.round((ms || 0) / 1000)), h = Math.floor(s / 3600), m = Math.floor(s / 60) % 60, ss = s % 60;
+    return (h ? h + ':' + String(m).padStart(2, '0') : String(m)) + ':' + String(ss).padStart(2, '0');
+  }
+  function unlockCard(q, text, after) {
+    var c = el('section', 'mg-card');
+    add(c, el('p', 'soft', text), btn('Unlock with passkey', 'btn btn-primary', async function () {
+      try { await historyKey(); after(); } catch (e) { say(e.code ? VAULT_TEXT[e.code] : (e.message || 'Couldn’t unlock.'), true); }
+    }));
+    return c;
+  }
+
+  // ---- a profile's Watching tab
+  async function watchingTab(q, b) {
+    var wait = el('p', 'soft', 'Loading…'); b.appendChild(wait);
+    var d = await getJson('/api/account/history?profile=' + encodeURIComponent(q.id));
+    wait.remove();
+    if (!d.enabled) {
+      b.appendChild(add(el('section', 'mg-card'), el('h2', null, 'Watch history is off for your account'),
+        el('p', 'soft', 'Each TV keeps its own place. Turn on “Keep my watch history” on the Account tab to pick up on any TV.'),
+        (function () { var a = el('a', 'linkish', 'Open the Account tab'); a.href = '/account/'; return a; })()));
+      return;
+    }
+    var list = el('section', 'mg-card'); b.appendChild(list);
+    function drawList(rows) {
+      list.innerHTML = '';
+      add(list, el('h2', null, 'Continue watching · ' + rows.filter(function (r) { return !r.v.done; }).length));
+      if (!rows.length) { list.appendChild(el('p', 'soft', q.off ? '' : 'Nothing yet. Where ' + q.name + ' stops in a movie or episode shows up here and on every TV.')); return; }
+      add(list, el('p', 'soft', 'Where ' + q.name + ' stopped in each movie and episode, from every TV. Locked so only your TVs and your passkey can read it.'));
+      var ul = el('ul', 'mg-rows mg-watch');
+      rows.forEach(function (r) {
+        var v = r.v, li = el('li');
+        var what = (v.t === 'e' ? 'Series · S' + v.s + ' E' + v.e : 'Movie') + (v.done ? ' · watched' : ' · ' + clock(v.pos) + (v.dur ? ' of ' + clock(v.dur) : ''));
+        var bar = el('span', 'mg-bar'); var fill = el('span'); fill.style.width = (v.done ? 100 : v.dur ? Math.min(100, Math.round(100 * v.pos / v.dur)) : 0) + '%'; bar.appendChild(fill);
+        add(li, add(el('span', 'mg-name'), el('span', 'mg-strong', v.t === 'e' ? (v.series || v.title) : v.title), el('span', 'mg-provider', what), bar),
+          el('span', 'mg-provider mg-where', (v.tv || 'A TV') + ' · ' + when(r.at)),
+          v.done ? null : btn('Mark watched', 'btn btn-ghost btn-sm', async function () {
+            var nv = Object.assign({}, v, { done: true, pos: 0, tv: 'the website' });
+            var x = await post('/api/account/history/put', { profileId: q.id, item: r.item, blob: await hLock(nv) });
+            if (!x._ok) return say(x.error || 'Couldn’t change it.', true);
+            r.v = nv; r.at = Date.now(); say('Marked watched on every TV.'); drawList(rows);
+          }),
+          btn('Remove', 'btn btn-ghost btn-sm', async function () {
+            var x = await post('/api/account/history/put', { profileId: q.id, item: r.item, blob: null });
+            if (!x._ok) return say(x.error || 'Couldn’t remove it.', true);
+            rows.splice(rows.indexOf(r), 1); say('Removed from Continue watching on every TV.'); drawList(rows);
+          }));
+        ul.appendChild(li);
+      });
+      list.appendChild(ul);
+    }
+    async function load() {
+      var rows = [];
+      for (var i = 0; i < d.items.length; i++) { try { rows.push({ item: d.items[i].item, at: d.items[i].at, v: await hOpen(d.items[i].blob) }); } catch (e) { if (e.code) throw e; } }
+      rows.sort(function (a, c) { return c.at - a.at; });
+      drawList(rows);
+    }
+    if (H) await load();
+    else if (!d.items.length) drawList([]);
+    else { list.appendChild(unlockCard(q, 'Continue watching · ' + d.items.length + (d.items.length === 1 ? ' title' : ' titles') + ' from your TVs. Unlock with your passkey to see them.', function () { load(); })); }
+
+    var set = el('section', 'mg-card'); b.appendChild(set);
+    add(set, el('h2', null, 'Watch history for ' + q.name),
+      check('Keep ' + q.name + '’s place in movies and episodes on every TV', !q.historyOff, async function (onNow) {
+        if (!onNow && !confirm('Turn off for ' + q.name + '? Each TV goes back to keeping its own place, and what your account holds for ' + q.name + ' is deleted.')) { route(); return; }
+        var x = await post('/api/account/profiles/history', { profileId: q.id, off: !onNow });
+        if (!x._ok) return say(x.error || 'Couldn’t change it.', true);
+        q.historyOff = !onNow; say(onNow ? 'On: ' + q.name + '’s place follows to every TV.' : 'Off for ' + q.name + '.'); route();
+      }),
+      el('p', 'fineprint', 'Off: each TV keeps its own place, and what the account has for ' + q.name + ' is deleted. Pause history on a TV stops that TV from sending. Live TV channels are never sent. Neither the website nor its admins can read any of it.'),
+      btn('Clear ' + q.name + '’s history', 'btn btn-ghost', async function () {
+        if (!confirm('Delete everything your account holds for ' + q.name + '? Each TV keeps what it has itself.')) return;
+        var x = await post('/api/account/profiles/history', { profileId: q.id, off: q.historyOff, clear: true });
+        if (!x._ok) return say(x.error || 'Couldn’t clear it.', true);
+        say('Cleared.'); route();
+      }));
+  }
+
+  // ---- a profile's Discover tab (and the account's TMDB key)
+  var SERVICES = [[8, 'Netflix'], [1899, 'Max'], [337, 'Disney+'], [9, 'Prime Video'], [15, 'Hulu'], [350, 'Apple TV+'], [386, 'Peacock'], [531, 'Paramount+'], [43, 'Starz'], [37, 'Showtime'], [283, 'Crunchyroll'], [73, 'Tubi']];
+  async function discoverTab(q, b) {
+    var wait = el('p', 'soft', 'Loading…'); b.appendChild(wait);
+    var d = await getJson('/api/account/history?profile=' + encodeURIComponent(q.id));
+    wait.remove();
+    if (!H) {
+      b.appendChild(unlockCard(q, 'Discover settings, My List and the TMDB key are locked so only your TVs and your passkey can read them. Unlock to see and change them.', function () { route(); }));
+      return;
+    }
+    var D = { myList: [], services: [], start: 'all', grownUps: true };
+    if (d.discover) try { D = Object.assign(D, await hOpen(d.discover.blob)); } catch (e) { if (e.code) throw e; }
+    async function save(msg) {
+      var x = await post('/api/account/discover', { profileId: q.id, blob: await hLock(D) });
+      say(x._ok ? (msg || 'Saved · TVs pick it up within a minute while Avid Viewer is open') : (x.error || 'Couldn’t save.'), !x._ok);
+    }
+    var sv = el('section', 'mg-card'); b.appendChild(sv);
+    add(sv, el('h2', null, 'My streaming services'), el('p', 'soft', 'The services ' + q.name + ' subscribes to. Discover can then show only what ' + q.name + ' can watch now.'));
+    var chips = el('div', 'mg-chips');
+    var all = SERVICES.map(function (x) { return { id: x[0], name: x[1] }; });
+    D.services.forEach(function (s) { if (!all.some(function (a) { return a.id === s.id; })) all.push(s); });
+    all.forEach(function (s) {
+      chips.appendChild(check(s.name, D.services.some(function (x) { return x.id === s.id; }), function (on) {
+        D.services = on ? D.services.concat([{ id: s.id, name: s.name, logo: s.logo || '' }]) : D.services.filter(function (x) { return x.id !== s.id; });
+        save();
+      }));
+    });
+    sv.appendChild(chips);
+    var st = el('section', 'mg-card'); b.appendChild(st);
+    add(st, el('h2', null, 'When Discover opens'));
+    [['all', 'Everything', 'Trending and new titles, wherever they are.'], ['provider', 'On your provider', 'Only titles ' + q.name + '’s playlists have.'], ['services', 'My services', 'Only titles on the services above.']].forEach(function (o) {
+      var l = el('label', 'switch-row'); var r = el('input'); r.type = 'radio'; r.name = 'dstart'; r.checked = D.start === o[0];
+      r.addEventListener('change', function () { D.start = o[0]; save(); });
+      add(l, r, add(el('span'), el('strong', null, o[1]), el('span', 'fineprint', ' · ' + o[2]))); st.appendChild(l);
+    });
+    add(st, check('Show titles for grown-ups (rated R / TV-MA and up)', D.grownUps !== false, function (on) { D.grownUps = on; save(); }),
+      el('p', 'fineprint', q.kids ? 'Kids profiles never see Discover.' : 'Off: Discover leaves out movies rated R or NC-17 and series rated TV-MA.'));
+    var ml = el('section', 'mg-card'); b.appendChild(ml);
+    function drawList() {
+      ml.innerHTML = '';
+      var mv = D.myList.filter(function (x) { return x.t === 'movie'; }).length;
+      add(ml, el('h2', null, 'My List · ' + D.myList.length), el('p', 'soft', mv + (mv === 1 ? ' movie, ' : ' movies, ') + (D.myList.length - mv) + ' series, added from Discover, Movies or Series. They follow ' + q.name + ' to every TV. Stream addresses are never sent: each TV finds the title in its own playlists.'));
+      var ul = el('ul', 'mg-rows');
+      D.myList.forEach(function (x, i) {
+        add(ul, add(el('li'), add(el('span', 'mg-name'), el('span', 'mg-strong', x.name), el('span', 'mg-provider', (x.t === 'movie' ? 'Movie' : 'Series') + (x.year ? ' · ' + x.year : '') + (x.cat ? ' · ' + x.cat : ''))),
+          btn('Remove', 'btn btn-ghost btn-sm', function () { D.myList.splice(i, 1); save('Removed from My List on every TV.'); drawList(); })));
+      });
+      ml.appendChild(ul);
+    }
+    drawList();
+    // The account's TMDB key.
+    var tk = el('section', 'mg-card mg-card-quiet'); b.appendChild(tk);
+    var has = S.history && S.history.tmdb;
+    add(tk, el('h2', null, 'For the whole account: TMDB key'),
+      el('p', 'soft', 'Discover uses a free key from themoviedb.org (Settings › API). Enter it once here and every TV gets it, locked so the website and its admins can’t read it.'),
+      el('p', has ? 'mg-ok' : 'soft', has ? '● Saved for your TVs' : 'Not saved in your account yet (a TV may still have its own).'));
+    var f = field(has ? 'Replace the key' : 'TMDB API key', 'password', '', { autocomplete: 'off', maxlength: '200' });
+    add(tk, f, add(el('div', 'row'), btn('Save key', 'btn btn-primary', async function () {
+      var k = f.input.value.trim(); if (!/^[A-Za-z0-9._-]{16,}$/.test(k)) return say('That doesn’t look like a TMDB key (Settings › API on themoviedb.org).', true);
+      var x = await post('/api/account/tmdb', { blob: await hLock({ tmdb: k }) });
+      if (!x._ok) return say(x.error || 'Couldn’t save it.', true);
+      S.history.tmdb = true; f.input.value = ''; say('Saved. Your TVs get it within a minute while Avid Viewer is open.'); route();
+    }), has ? btn('Remove', 'btn btn-ghost', async function () {
+      if (!confirm('Remove the TMDB key from your account? TVs keep the copy they have until you remove it there.')) return;
+      var x = await post('/api/account/tmdb', { blob: null });
+      if (x._ok) { S.history.tmdb = false; say('Removed from your account.'); route(); }
+    }) : null));
+  }
+
+  /** #history (from Needs your attention): unlock once so every TV gets the history key. */
+  function historyUnlockPage() {
+    var b = body('Share where you stopped between TVs');
+    b.insertBefore(back('Profiles', '#'), b.firstChild);
+    var n = (S.history && S.history.devicesWaiting) || 0;
+    b.appendChild(unlockCard(null, (n ? n + (n === 1 ? ' TV is' : ' TVs are') + ' waiting for the key that keeps what you watch private. ' : '') + 'Unlock once with your passkey; the TVs get the key within a minute while Avid Viewer is open.', function () { say('Done: your TVs get the key within a minute.'); go('#'); }));
   }
 
   // ------------------------------------------------------------ Favorites & lists, Order & names (1.16.0)

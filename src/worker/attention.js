@@ -137,6 +137,17 @@ export async function attention(env, user) {
       `A Kids profile goes to your devices once every grown-up profile has a PIN, so a child can’t switch out of it. Still needed: ${list(missing)}.`,
       [{ label: 'Finish setting up', href: `/profiles/#finish=${kids[0].id}` }]);
   }
+  // Pick up where you left off (1.17.0): TVs that can't share places until the owner unlocks once with the passkey.
+  {
+    const u = await env.DB.prepare('SELECT watch_history FROM users WHERE id = ?1').bind(uid).first();
+    const waiting = (await env.DB.prepare(`SELECT name FROM devices WHERE user_id = ?1 AND revoked_at IS NULL AND pubkey IS NOT NULL AND managed_at IS NOT NULL
+        AND id NOT IN (SELECT device_id FROM device_history_keys WHERE user_id = ?1)`).bind(uid).all()).results.map((d) => d.name);
+    if (u?.watch_history && waiting.length) {
+      add(`historykey:${waiting.join(',')}`, 'info', 'profiles', `${list(waiting)} can’t share where you stopped yet`,
+        'Unlock once with your passkey so these TVs get the key that keeps what you watch private. Until then each TV keeps its own place.',
+        [{ label: 'Unlock with passkey', href: '/profiles/#history' }]);
+    }
+  }
   // Backups.
   if (!(typeof env.BACKUP_PIN_KEY === 'string' && env.BACKUP_PIN_KEY.length)) {
     add('backupsoff', 'error', 'backups', 'Backups can’t be saved right now',
