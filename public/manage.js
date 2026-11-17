@@ -702,6 +702,7 @@
     b.querySelector('.page-head').appendChild(el('p', 'soft', roleText(q) + (on.length ? ' · on ' + names(on) : ' · not on a device yet')));
     b.appendChild(subTabs([['Overview', '#manage=' + q.id, ''], ['What ' + q.name + ' can see', '#manage=' + q.id + '/see', 'see'], ['Favorites & lists', '#manage=' + q.id + '/lists', 'lists'], ['Watching', '#manage=' + q.id + '/watching', 'watching'], ['Discover', '#manage=' + q.id + '/discover', 'discover']], tab));
     if (tab === 'lists') return listsTab(q, b);
+    if ((tab === 'watching' || tab === 'discover') && q.kids) return kidsPrivacyNote(q, b, tab);
     if (tab === 'watching') return watchingTab(q, b);
     if (tab === 'discover') return discoverTab(q, b);
     if (tab !== 'see') {
@@ -881,6 +882,14 @@
       try { await historyKey(); after(); } catch (e) { say(e.code ? VAULT_TEXT[e.code] : (e.message || 'Couldn’t unlock.'), true); }
     }));
     return c;
+  }
+
+  /** Kids profiles: no Discover and no pick up where you left off, for their privacy. */
+  function kidsPrivacyNote(q, b, tab) {
+    b.appendChild(add(el('section', 'mg-card mg-card-quiet'),
+      el('h2', null, tab === 'watching' ? 'Not shared for Kids profiles' : 'No Discover for Kids profiles'),
+      el('p', 'soft', 'For their privacy, Kids profiles don\u2019t offer Discover or pick up where you left off. Nothing ' + q.name + ' watches is sent to your account: each TV keeps ' + q.name + '\u2019s place in a movie or episode on that TV only, and Discover isn\u2019t on ' + q.name + '\u2019s menu.'),
+      el('p', 'fineprint', 'What ' + q.name + ' can watch is set on the \u201cWhat ' + q.name + ' can see\u201d tab.')));
   }
 
   // ---- a profile's Watching tab

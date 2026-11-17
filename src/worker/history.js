@@ -34,8 +34,9 @@ async function tvHistory(request, env) {
   if (!b) return json({ error: 'Not JSON.' }, 400);
   const enabled = await on(env, d.user_id);
   const now = Date.now();
+  // Kids profiles never share where they stopped and have no Discover (their privacy): nothing of theirs is kept.
   const mine = new Map((await env.DB.prepare(`SELECT p.id, p.history_off FROM profiles p JOIN device_profiles dp ON dp.profile_id = p.id
-      WHERE dp.device_id = ?1 AND p.user_id = ?2`).bind(d.id, d.user_id).all()).results.map((r) => [r.id, !r.history_off]));
+      WHERE dp.device_id = ?1 AND p.user_id = ?2 AND p.kids = 0`).bind(d.id, d.user_id).all()).results.map((r) => [r.id, !r.history_off]));
   const out = [];
   for (const p of Array.isArray(b.profiles) ? b.profiles.slice(0, 20) : []) {
     const id = clip(p?.id, 40);
@@ -89,7 +90,7 @@ export async function handleHistoryTvApi(request, env, p) {
 // ---------------------------------------------------------------- account side
 
 async function ownProfile(env, user, id) {
-  return env.DB.prepare('SELECT id, history_off FROM profiles WHERE id = ?1 AND user_id = ?2').bind(clip(id, 40), user.id).first();
+  return env.DB.prepare('SELECT id, history_off FROM profiles WHERE id = ?1 AND user_id = ?2 AND kids = 0').bind(clip(id, 40), user.id).first();
 }
 
 /** A profile's locked places and Discover settings (opened in the browser with the passkey). */
