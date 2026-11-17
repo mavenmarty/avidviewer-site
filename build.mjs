@@ -172,8 +172,8 @@ async function main() {
     const name = basename(f, '.html');
     const path = name === 'index' ? '/' : `/${name}/`;
     const scripts = name === 'index' ? '<script src="/notify.js" defer></script>'
-      : name === 'playlists' || name === 'profiles' || name === 'devices' ? '<script src="/playlists.js" defer></script><script src="/manage.js" defer></script>'
-      : name === 'signin' || name === 'account' || name === 'backups' || name === 'link' ? '<script src="/js/webauthn.js" defer></script><script src="/account.js" defer></script>'
+      : name === 'playlists' || name === 'profiles' || name === 'devices' ? '<script src="/playlists.js" defer></script><script src="/manage.js" defer></script><script src="/attention.js" defer></script>'
+      : name === 'signin' || name === 'account' || name === 'backups' || name === 'link' ? '<script src="/js/webauthn.js" defer></script><script src="/account.js" defer></script>' + (name === 'account' || name === 'backups' ? '<script src="/attention.js" defer></script>' : '')
       : name === 'admin' ? '<script src="/js/webauthn.js" defer></script><script src="/admin.js" defer></script>' : '';
     const html = layout({ ...meta, path, body, scripts });
     if (name === 'index') await writeFile(join(OUT, 'index.html'), html);

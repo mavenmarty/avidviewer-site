@@ -17,6 +17,7 @@
 // send to the server and don't "click", so a scanner can't use up someone's link.
 
 import { playlistsSave, playlistsSeal, playlistsRemove, playlistVault } from './playlists.js';
+import { attention, playlistsRetry } from './attention.js';
 import { manage, catalogFor, profileSave, profileRemove, profilePin, profileVisibility, deviceSetProfiles, deviceStop, vaultKey, accountKeySave, deviceLogins, playlistsImport, playlistsAdopt } from './profiles.js';
 import {
   generateRegistrationOptions, verifyRegistrationResponse,
@@ -366,7 +367,7 @@ export async function handleAccountApi(request, env, realUrl) {
     // (wrangler dev rewrites the Origin header to the real site's address, so that one is accepted locally too.)
     const origin = request.headers.get('origin');
     if (origin !== url.origin && origin !== realUrl.origin) return json({ error: 'Not allowed.' }, 403);
-  } else if (!(request.method === 'GET' && (p === '/api/me' || p === '/api/account/manage' || p === '/api/account/catalog' || p === '/api/account/playlists/vault' || p === '/api/account/device-logins' || p.startsWith('/api/admin/')))) {
+  } else if (!(request.method === 'GET' && (p === '/api/me' || p === '/api/account/manage' || p === '/api/account/catalog' || p === '/api/account/playlists/vault' || p === '/api/account/device-logins' || p === '/api/account/attention' || p.startsWith('/api/admin/')))) {
     return json({ error: 'Use POST.' }, 405);
   }
 
@@ -401,6 +402,8 @@ export async function handleAccountApi(request, env, realUrl) {
     case '/api/account/vault/key': return vaultKey(request, env, user);
     case '/api/account/vault/account-key': return accountKeySave(request, env, user);
     case '/api/account/device-logins': return request.method === 'GET' ? deviceLogins(env, user) : json({ error: 'Use GET.' }, 405);
+    case '/api/account/attention': return request.method === 'GET' ? attention(env, user) : json({ error: 'Use GET.' }, 405);
+    case '/api/account/playlists/retry': return playlistsRetry(request, env, user);
     case '/api/account/playlists/import': return playlistsImport(request, env, user);
     case '/api/account/playlists/adopt': return playlistsAdopt(request, env, user);
     case '/api/account/playlists/remove': return playlistsRemove(request, env, user);

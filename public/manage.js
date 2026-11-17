@@ -231,6 +231,7 @@
 
   function renderPending() {
     var box = $('mg-pending'); box.innerHTML = '';
+    if (PAGE !== 'playlists') return; // elsewhere, Needs your attention points here
     var b = el('section', 'mg-banner');
     var importable = S.playlists.filter(function (p) { return !p.kept && !p.removing && deviceHas(p).length; });
     var kept = S.pending.filter(function (p) { return p.kept; });
@@ -277,6 +278,7 @@
     if (r.status === 401) { location.href = '/signin/?next=' + encodeURIComponent(location.pathname); return; }
     S = await r.json();
     $('mg-loading').hidden = true; $('mg-body').hidden = false;
+    window.dispatchEvent(new Event('avid:changed'));
     renderPending();
     if (!editing) route();
   }
