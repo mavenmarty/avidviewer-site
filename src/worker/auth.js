@@ -285,15 +285,18 @@ async function me(env, user) {
   const passkeys = await env.DB.prepare('SELECT id, name, created_at, last_used FROM passkeys WHERE user_id = ?1 ORDER BY created_at').bind(user.id).all();
   const sessions = await env.DB.prepare('SELECT token_hash, label, created_at, last_seen FROM sessions WHERE user_id = ?1 AND expires_at > ?2 ORDER BY last_seen DESC')
     .bind(user.id, Date.now()).all();
+  const vault = (await env.DB.prepare('SELECT credential_id FROM vault_keys WHERE user_id = ?1').bind(user.id).all()).results.map((r) => r.credential_id);
+  const akey = await env.DB.prepare('SELECT 1 FROM account_keys WHERE user_id = ?1').bind(user.id).first();
   return json({
     email: user.email,
     createdAt: user.created_at,
+    lockedLogins: Boolean(vault.length && akey),
     admin: user.role === 'admin',
     adminReady: user.role === 'admin' && user.session_method === 'passkey',
     watchHistory: Boolean(user.watch_history),
     devices: await devicesFor(env, user.id),
     backups: await backupsFor(env, user.id),
-    passkeys: passkeys.results.map((p) => ({ id: p.id, name: p.name, createdAt: p.created_at, lastUsed: p.last_used })),
+    passkeys: passkeys.results.map((p) => ({ id: p.id, name: p.name, createdAt: p.created_at, lastUsed: p.last_used, unlocksLogins: vault.includes(p.id) })),
     sessions: sessions.results.map((s) => ({
       id: s.token_hash.slice(0, 16), label: s.label || 'A browser', createdAt: s.created_at, lastSeen: s.last_seen,
       current: s.token_hash === user.sessionHash,

@@ -314,3 +314,17 @@ button.btn-ghost { background: transparent; color: var(--text); }
 .linkish.mg-danger { color: #F2A79B; }
 .mg-banner h3 { font-size: 18px; color: var(--text); }
 .mg-chip.mg-removing { background: #3A2420; color: #F2A79B; margin-left: 8px; vertical-align: 2px; }
+
+.mg-tabs { align-items: center; }
+.mg-signout { margin-left: auto; font-size: 14px; color: var(--soft); }
+.mg .account { display: flex; flex-direction: column; gap: 20px; padding-bottom: 20px; }
+.mg-pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 20px; align-items: start; }
+.mg-pair .setup-card { margin: 0; }
+.mg .setup-card { margin: 0; }
+.mg-first { border-color: var(--accent); background: #2A2016; }
+.mg-on { color: #9FD8A4; }
+.mg-steps { margin: 0; padding-left: 22px; display: flex; flex-direction: column; gap: 8px; color: var(--soft); line-height: 1.5; }
+.mg .account { max-width: none; margin: 0; width: 100%; }
+.mg .account .setup-card { max-width: none; width: auto; }
+.mg-first .k { font-size: 13px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); margin: 0; }
+.mg .account { align-items: stretch; padding-top: 8px; }

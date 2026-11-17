@@ -23,7 +23,7 @@
     try { resp = await WA.startAuthentication({ optionsJSON: o.options }); } catch (e) { say(msg, 'Passkey sign-in was cancelled.', true); return; }
     var v = await post('/api/passkeys/login/verify', { challengeId: o.challengeId, response: resp });
     if (!v._ok) { say(msg, v.error || "That didn't work.", true); return; }
-    location.href = next || '/account/';
+    location.href = next || '/playlists/';
   }
 
   // ---------------------------------------------------------------- /signin/
@@ -43,12 +43,12 @@
       document.getElementById('link-state').hidden = false;
       form.hidden = true; document.querySelector('.or').hidden = true; document.getElementById('passkey-signin').hidden = true;
       post('/api/auth/verify', { token: t }).then(function (d) {
-        if (d._ok) { location.href = next || ('/account/' + (d.newAccount ? '?welcome=1' : '')); return; }
+        if (d._ok) { location.href = next || (d.newAccount ? '/account/?welcome=1' : '/playlists/'); return; }
         say(document.getElementById('link-msg'), d.error || "That link didn't work.", true);
         form.hidden = false; document.querySelector('.or').hidden = false; document.getElementById('passkey-signin').hidden = false;
       });
     } else {
-      fetch('/api/me', { credentials: 'same-origin' }).then(function (r) { if (r.ok) location.href = next || '/account/'; });
+      fetch('/api/me', { credentials: 'same-origin' }).then(function (r) { if (r.ok) location.href = next || '/playlists/'; });
     }
     form.addEventListener('submit', function (e) {
       e.preventDefault();
@@ -109,14 +109,32 @@
     return;
   }
 
-  // ---------------------------------------------------------------- /account/
+  // Sign out (the tab bar on every account page).
+  document.querySelectorAll('.mg-signout').forEach(function (b) {
+    b.addEventListener('click', function () { post('/api/auth/signout').then(function () { location.href = '/'; }); });
+  });
+
+  // ---------------------------------------------------------------- /account/ and /backups/
   var acct = document.getElementById('account');
   if (!acct) return;
   var me;
 
   function render() {
-    document.getElementById('acct-email').textContent = 'Signed in as ' + me.email + (me.admin ? ' · administrator' : '');
-    var tv = document.getElementById('devices'); tv.innerHTML = '';
+    var em = document.getElementById('acct-email');
+    if (em) em.textContent = 'Signed in as ' + me.email + (me.admin ? ' · administrator' : '') + '. How you sign in, where you\'re signed in, and what your account keeps.';
+    var ls = document.getElementById('locked-state');
+    if (ls) {
+      ls.innerHTML = '';
+      if (me.lockedLogins) { var on = el('strong', 'mg-on', '● On. '); ls.appendChild(on); ls.appendChild(document.createTextNode('Playlist logins are kept in your account, locked so only your passkey opens them. New devices get them without typing, and the website can never read them.')); }
+      else { ls.appendChild(document.createTextNode('Off. Turn it on from the Playlists page (Set up with passkey), so new devices get logins without typing. The website can never read them.')); }
+      var lw = document.getElementById('locked-with');
+      var un = me.passkeys.filter(function (p) { return p.unlocksLogins; }).map(function (p) { return p.name || 'A passkey'; });
+      lw.textContent = me.lockedLogins ? 'Unlocks with: ' + (un.join(', ') || 'a passkey') + '. A passkey that can\'t do this (some password managers) can still sign you in.' : '';
+    }
+    var bt = document.getElementById('backups-title');
+    if (bt) bt.textContent = 'Backups in your account · ' + me.backups.length;
+    var tv = document.getElementById('devices');
+    if (tv) { tv.innerHTML = '';
     if (!me.devices.length) tv.appendChild(el('li', 'soft', 'No devices linked yet.'));
     me.devices.forEach(function (d) {
       var li = el('li'); li.appendChild(el('span', null, d.name));
@@ -133,7 +151,9 @@
       });
       li.appendChild(rn); li.appendChild(rm); tv.appendChild(li);
     });
-    var bk = document.getElementById('backups'); bk.innerHTML = '';
+    }
+    var bk = document.getElementById('backups');
+    if (bk) { bk.innerHTML = '';
     if (!me.backups.length) bk.appendChild(el('li', 'soft', 'No backups yet. Turn them on in Avid Viewer › Settings › Updates & about on a linked device.'));
     me.backups.forEach(function (x) {
       var li = el('li'); li.appendChild(el('span', null, x.name + (x.removed ? ' (removed device, deleted ' + when(x.deletesAt) + ')' : '')));
@@ -146,7 +166,7 @@
           .then(function (r) { return r.json(); })
           .then(function (o) {
             if (o.pin) { pinOut.textContent = 'PIN ' + o.pin; show.textContent = 'Hide PIN'; return; }
-            if (o.signIn) { if (confirm(o.error + ' Sign in now?')) location.href = '/signin/?next=' + encodeURIComponent('/account/'); return; }
+            if (o.signIn) { if (confirm(o.error + ' Sign in now?')) location.href = '/signin/?next=' + encodeURIComponent(location.pathname); return; }
             alert(o.error || 'The PIN could not be shown.');
           });
       });
@@ -158,7 +178,10 @@
       });
       li.appendChild(del); bk.appendChild(li);
     });
-    var pk = document.getElementById('passkeys'); pk.innerHTML = '';
+    }
+    var pk = document.getElementById('passkeys');
+    if (!pk) return;
+    pk.innerHTML = '';
     if (!me.passkeys.length) pk.appendChild(el('li', 'soft', 'No passkeys yet.'));
     me.passkeys.forEach(function (p) {
       var li = el('li'); li.appendChild(el('span', null, p.name));
@@ -187,13 +210,13 @@
 
   function load() {
     return fetch('/api/me', { credentials: 'same-origin' }).then(function (r) {
-      if (r.status === 401) { location.href = '/signin/'; return; }
+      if (r.status === 401) { location.href = '/signin/?next=' + encodeURIComponent(location.pathname); return; }
       return r.json().then(function (d) { me = d; acct.hidden = false; render(); });
     });
   }
   load();
 
-  if (/[?&]welcome=1/.test(location.search)) document.getElementById('welcome').hidden = false;
+  if (/[?&]welcome=1/.test(location.search) && document.getElementById('welcome')) document.getElementById('welcome').hidden = false;
   document.querySelectorAll('[data-history]').forEach(function (b) {
     b.addEventListener('click', function () {
       post('/api/account/settings', { watchHistory: b.getAttribute('data-history') === '1' }).then(function () {
@@ -201,6 +224,7 @@
       });
     });
   });
+  if (!document.getElementById('watch-history')) return;
   document.getElementById('watch-history').addEventListener('change', function (e) {
     post('/api/account/settings', { watchHistory: e.target.checked }).then(load);
   });
@@ -222,7 +246,7 @@
   });
 
   document.getElementById('end-others').addEventListener('click', function () { post('/api/account/sessions/end', { others: true }).then(load); });
-  document.getElementById('signout').addEventListener('click', function () { post('/api/auth/signout').then(function () { location.href = '/'; }); });
+
   document.getElementById('delete-account').addEventListener('click', function () {
     var m = document.getElementById('delete-msg');
     post('/api/account/delete', { confirm: document.getElementById('delete-confirm').value }).then(function (d) {

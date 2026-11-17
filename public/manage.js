@@ -838,6 +838,9 @@
     b.appendChild(el('p', 'fineprint', 'A device with one profile (or none) shows no profiles at all. Taking a profile off a device removes that profile\'s playlists from it, unless another profile on the device has them.'));
   }
 
+  document.querySelectorAll('.mg-signout').forEach(function (b) {
+    b.addEventListener('click', function () { post('/api/auth/signout', {}).then(function () { location.href = '/'; }); });
+  });
   load().catch(function () { say('Couldn\'t load your account. Reload the page.', true); });
   setInterval(function () { if (!editing && document.visibilityState === 'visible') load().catch(function () {}); }, 15000);
 })();

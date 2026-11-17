@@ -1,67 +1,62 @@
 <!-- {"title": "Your account — Avid Viewer", "description": "Your Avid Viewer account: passkeys, signed-in browsers, your devices and privacy choices.", "nav": "account"} -->
-<div class="wrap">
+<div class="wrap mg">
+  <nav class="mg-tabs" aria-label="Manage">
+    <a href="/playlists/">Playlists</a>
+    <a href="/profiles/">Profiles</a>
+    <a href="/devices/">Devices</a>
+    <a href="/backups/">Backups</a>
+    <a href="/account/" aria-current="page">Account</a>
+    <button class="linkish mg-signout" type="button">Sign out</button>
+  </nav>
   <header class="page-head">
-    <h1>Your account</h1>
+    <h1>Account</h1>
     <p id="acct-email">Loading…</p>
   </header>
   <div class="account" id="account" hidden>
-    <section class="setup-card" id="welcome" hidden>
-      <p class="k">Welcome to Avid Viewer</p>
+    <section class="setup-card mg-first" id="welcome" hidden>
+      <p class="k">First visit only</p>
       <h2>One question first</h2>
-      <p>Should your account keep your watch history (where you stopped in each movie and episode) so every device can pick up where you left off? You can change this, or delete the history, at any time.</p>
+      <p>Should your account keep your watch history (where you stopped in each movie and episode) so every device can pick up where you left off? You can change this below at any time.</p>
       <div class="btn-row">
         <button class="btn btn-primary" type="button" data-history="1">Yes, keep it</button>
         <button class="btn btn-ghost" type="button" data-history="0">No thanks</button>
       </div>
     </section>
 
-    <section class="setup-card">
-      <h2>Your devices</h2>
-      <ul class="rows" id="devices"></ul>
-      <a class="btn btn-primary" href="/link/">Add a device</a>
-      <p class="soft">Open Avid Viewer on the new device: its welcome screen shows a code and a QR code. Choose Add a device and type the code, or scan the QR code with your phone to fill it in (on a device that's already set up: Settings › Account › Link this device). Once it's linked, it can restore any of the backups below: copy your setup from another device without typing a playlist again.</p>
-    </section>
+    <div class="mg-pair">
+      <section class="setup-card">
+        <h2>Passkeys</h2>
+        <p class="soft">A passkey signs you in with your fingerprint, face or device PIN instead of an email link.</p>
+        <ul class="rows" id="passkeys"></ul>
+        <button class="btn btn-ghost" type="button" id="add-passkey">＋ Add a passkey</button>
+        <p class="form-msg" id="passkey-msg" role="status" aria-live="polite"></p>
+      </section>
 
-    <section class="setup-card">
-      <h2>Playlists</h2>
-      <p class="soft">Enter your playlists here instead of with the remote, and choose which devices and profiles get each one.</p>
-      <a class="btn btn-primary" href="/playlists/">Manage playlists</a>
-    </section>
+      <section class="setup-card">
+        <h2>Locked logins</h2>
+        <p class="soft" id="locked-state"></p>
+        <p class="fineprint" id="locked-with"></p>
+      </section>
 
-    <section class="setup-card">
-      <h2>Backups</h2>
-      <p class="soft">Each linked device keeps its most recent backup here, locked with the PIN chosen on that device. Devices back up once a day when something changes. To restore, choose Restore from your account in Avid Viewer › Settings › Updates &amp; about, then use <strong>Show PIN</strong> here.</p>
-      <ul class="rows" id="backups"></ul>
-    </section>
+      <section class="setup-card">
+        <h2>Signed-in browsers</h2>
+        <ul class="rows" id="sessions"></ul>
+        <button class="btn btn-ghost" type="button" id="end-others">Sign out everywhere else</button>
+      </section>
 
-    <section class="setup-card">
-      <h2>Passkeys</h2>
-      <p class="soft">A passkey signs you in with your fingerprint, face or device PIN instead of an email link.</p>
-      <ul class="rows" id="passkeys"></ul>
-      <button class="btn btn-ghost" type="button" id="add-passkey">＋ Add a passkey</button>
-      <p class="form-msg" id="passkey-msg" role="status" aria-live="polite"></p>
-    </section>
-
-    <section class="setup-card">
-      <h2>Signed-in browsers</h2>
-      <ul class="rows" id="sessions"></ul>
-      <button class="btn btn-ghost" type="button" id="end-others">Sign out everywhere else</button>
-    </section>
-
-    <section class="setup-card">
-      <h2>Privacy</h2>
-      <label class="switch-row"><input type="checkbox" id="watch-history"> Keep my watch history so every device can pick up where I left off</label>
-      <p class="fineprint">Watch history isn't collected yet; this choice will apply when it is.</p>
-    </section>
+      <section class="setup-card">
+        <h2>Privacy</h2>
+        <label class="switch-row"><input type="checkbox" id="watch-history"> Keep my watch history so every device can pick up where I left off</label>
+        <p class="fineprint">Watch history isn't collected yet; this choice will apply when it is. What your account stores, and what it never does: <a href="/privacy/">privacy page</a>.</p>
+      </section>
+    </div>
 
     <section class="setup-card danger">
       <h2>Delete account</h2>
-      <p class="soft">Deletes your account, signs out every browser and removes your passkeys. Your devices keep working with their own playlists. This can't be undone.</p>
+      <p class="soft">Deletes your profiles, playlists, backups and the list of devices, signs out every browser and removes your passkeys. Avid Viewer keeps working on each device with what it has. This can't be undone.</p>
       <label class="fld">Type your email address to confirm<input type="email" id="delete-confirm" autocomplete="off"></label>
       <button class="btn btn-danger" type="button" id="delete-account">Delete my account</button>
       <p class="form-msg" id="delete-msg" role="status" aria-live="polite"></p>
     </section>
-
-    <p><button class="btn btn-ghost" type="button" id="signout">Sign out</button></p>
   </div>
 </div>
