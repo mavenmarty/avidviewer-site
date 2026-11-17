@@ -870,6 +870,13 @@
     if (items.length) window.dispatchEvent(new Event('avid:changed'));
     return items.length;
   }
+  /** An item id like the TVs make (HMAC-SHA256 with the history key, base64url, 22 characters). */
+  async function hItem(match) {
+    await historyKey();
+    var k = await crypto.subtle.importKey('raw', HRAW, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+    var sig = new Uint8Array(await crypto.subtle.sign('HMAC', k, new TextEncoder().encode(match)));
+    return b64(sig).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '').slice(0, 22);
+  }
   async function hOpen(text) { return JSON.parse(new TextDecoder().decode(await dec(await historyKey(), text))); }
   async function hLock(obj) { return enc(await historyKey(), new TextEncoder().encode(JSON.stringify(obj))); }
   function clock(ms) {
@@ -904,28 +911,66 @@
       return;
     }
     var list = el('section', 'mg-card'); b.appendChild(list);
+    var norm = function (x) { return String(x || '').toLowerCase().replace(/\s+/g, ' ').trim(); };
+    /**
+     * What Continue watching shows (1.17.1), the same rule as the TVs: movies part-way; a series (one row) until its
+     * latest episode is watched, back when a TV finds a new one; a series removed stays off until something new happens.
+     */
+    function shown(rows) {
+      var hideAt = {}, groups = {}, out = [];
+      rows.forEach(function (r) {
+        if (r.v.t === 'h') hideAt[norm(r.v.series)] = Math.max(hideAt[norm(r.v.series)] || 0, r.at);
+        else if (r.v.t === 'e') (groups[norm(r.v.series)] = groups[norm(r.v.series)] || []).push(r);
+        else if (!r.v.done) out.push({ kind: 'm', at: r.at, r: r });
+      });
+      Object.keys(groups).forEach(function (k) {
+        var g = groups[k].slice().sort(function (a, c) { return c.at - a.at; });
+        var lastS = 0, lastE = 0;
+        g.forEach(function (r) { var s2 = r.v.lastS || 0, e2 = r.v.lastE || 0; if (s2 > lastS || (s2 === lastS && e2 > lastE)) { lastS = s2; lastE = e2; } });
+        var part = g.filter(function (r) { return !r.v.done; })[0];
+        var latestDone = lastS > 0 && g.some(function (r) { return r.v.done && r.v.s === lastS && r.v.e === lastE; });
+        if (!part && latestDone) return;
+        if ((hideAt[k] || 0) >= g[0].at) return;
+        out.push({ kind: 's', at: g[0].at, rows: g, part: part, top: part || g[0], lastS: lastS, lastE: lastE });
+      });
+      return out.sort(function (a, c) { return c.at - a.at; });
+    }
     function drawList(rows) {
       list.innerHTML = '';
-      add(list, el('h2', null, 'Continue watching · ' + rows.filter(function (r) { return !r.v.done; }).length));
-      if (!rows.length) { list.appendChild(el('p', 'soft', q.off ? '' : 'Nothing yet. Where ' + q.name + ' stops in a movie or episode shows up here and on every TV.')); return; }
-      add(list, el('p', 'soft', 'Where ' + q.name + ' stopped in each movie and episode, from every TV. Locked so only your TVs and your passkey can read it.'));
+      var items = shown(rows);
+      add(list, el('h2', null, 'Continue watching \u00b7 ' + items.length));
+      if (!items.length) { list.appendChild(el('p', 'soft', q.off ? '' : 'Nothing yet. Where ' + q.name + ' stops in a movie or episode shows up here and on every TV.')); return; }
+      add(list, el('p', 'soft', 'Movies part-way, and series until their latest episode is watched (a new episode or season brings a series back), from every TV. Locked so only your TVs and your passkey can read it.'));
       var ul = el('ul', 'mg-rows mg-watch');
-      rows.forEach(function (r) {
-        var v = r.v, li = el('li');
-        var what = (v.t === 'e' ? 'Series · S' + v.s + ' E' + v.e : 'Movie') + (v.done ? ' · watched' : ' · ' + clock(v.pos) + (v.dur ? ' of ' + clock(v.dur) : ''));
-        var bar = el('span', 'mg-bar'); var fill = el('span'); fill.style.width = (v.done ? 100 : v.dur ? Math.min(100, Math.round(100 * v.pos / v.dur)) : 0) + '%'; bar.appendChild(fill);
-        add(li, add(el('span', 'mg-name'), el('span', 'mg-strong', v.t === 'e' ? (v.series || v.title) : v.title), el('span', 'mg-provider', what), bar),
-          el('span', 'mg-provider mg-where', (v.tv || 'A TV') + ' · ' + when(r.at)),
-          v.done ? null : btn('Mark watched', 'btn btn-ghost btn-sm', async function () {
+      items.forEach(function (it) {
+        var v = it.kind === 'm' ? it.r.v : it.top.v, li = el('li');
+        var what = it.kind === 'm' ? 'Movie \u00b7 ' + clock(v.pos) + (v.dur ? ' of ' + clock(v.dur) : '')
+          : it.part ? 'Series \u00b7 S' + v.s + ' E' + v.e + ' \u00b7 ' + clock(v.pos) + (v.dur ? ' of ' + clock(v.dur) : '')
+          : 'Series \u00b7 watched S' + v.s + ' E' + v.e + ' \u00b7 ' + (it.lastS ? 'up next' : 'more to watch');
+        var bar = el('span', 'mg-bar'); var fill = el('span'); fill.style.width = (v.done ? 0 : v.dur ? Math.min(100, Math.round(100 * v.pos / v.dur)) : 0) + '%'; bar.appendChild(fill);
+        add(li, add(el('span', 'mg-name'), el('span', 'mg-strong', it.kind === 's' ? (v.series || v.title) : v.title), el('span', 'mg-provider', what), bar),
+          el('span', 'mg-provider mg-where', (v.tv || 'A TV') + ' \u00b7 ' + when(it.at)),
+          it.kind === 'm' ? btn('Mark watched', 'btn btn-ghost btn-sm', async function () {
             var nv = Object.assign({}, v, { done: true, pos: 0, tv: 'the website' });
-            var x = await post('/api/account/history/put', { profileId: q.id, item: r.item, blob: await hLock(nv) });
-            if (!x._ok) return say(x.error || 'Couldn’t change it.', true);
-            r.v = nv; r.at = Date.now(); say('Marked watched on every TV.'); drawList(rows);
-          }),
+            var x = await post('/api/account/history/put', { profileId: q.id, item: it.r.item, blob: await hLock(nv) });
+            if (!x._ok) return say(x.error || 'Couldn\u2019t change it.', true);
+            it.r.v = nv; it.r.at = Date.now(); say('Marked watched on every TV.'); drawList(rows);
+          }) : null,
           btn('Remove', 'btn btn-ghost btn-sm', async function () {
-            var x = await post('/api/account/history/put', { profileId: q.id, item: r.item, blob: null });
-            if (!x._ok) return say(x.error || 'Couldn’t remove it.', true);
-            rows.splice(rows.indexOf(r), 1); say('Removed from Continue watching on every TV.'); drawList(rows);
+            if (it.kind === 'm') {
+              var x = await post('/api/account/history/put', { profileId: q.id, item: it.r.item, blob: null });
+              if (!x._ok) return say(x.error || 'Couldn\u2019t remove it.', true);
+              rows.splice(rows.indexOf(it.r), 1);
+            } else {
+              // A series: off until something new happens (a hide marker the TVs follow), and its part-way episode goes.
+              var hv = { t: 'h', series: v.series, tv: 'the website' };
+              var id = await hItem('h|' + norm(v.series));
+              var y = await post('/api/account/history/put', { profileId: q.id, item: id, blob: await hLock(hv) });
+              if (!y._ok) return say(y.error || 'Couldn\u2019t remove it.', true);
+              for (var i = 0; i < it.rows.length; i++) if (!it.rows[i].v.done) { await post('/api/account/history/put', { profileId: q.id, item: it.rows[i].item, blob: null }); rows.splice(rows.indexOf(it.rows[i]), 1); }
+              rows.push({ item: id, at: Date.now(), v: hv });
+            }
+            say('Removed from Continue watching on every TV.'); drawList(rows);
           }));
         ul.appendChild(li);
       });
