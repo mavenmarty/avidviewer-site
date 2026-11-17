@@ -1,6 +1,8 @@
 name = "avidviewer-site"
 main = "src/worker/index.js"
 compatibility_date = "2026-11-01"
+# Keep variables and secrets added in the Cloudflare dashboard when GitHub deploys (BACKUP_PIN_KEY, ADMIN_EMAILS…).
+keep_vars = true
 workers_dev = false
 
 # Static site built by build.mjs. The Worker runs first so it can redirect www and answer /api.

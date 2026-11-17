@@ -51,7 +51,9 @@ async function stats(env) {
   const daily = (await env.DB.prepare(
     'SELECT substr(created_at, 1, 10) AS day, COUNT(*) AS n FROM users WHERE created_at > ?1 GROUP BY day ORDER BY day'
   ).bind(iso(now - 30 * DAY)).all()).results;
-  return json({ users, new7, new30, active7, suspended, tvs, tvs7, passkeys, setupCodes24h, launchNews, backupCount, backupBytes, versions, daily });
+  // Whether the BACKUP_PIN_KEY secret reaches the Worker (never its value): without it backups are refused.
+  const backupsReady = typeof env.BACKUP_PIN_KEY === 'string' && env.BACKUP_PIN_KEY.length > 0;
+  return json({ users, new7, new30, active7, suspended, tvs, tvs7, passkeys, setupCodes24h, launchNews, backupCount, backupBytes, backupsReady, versions, daily });
 }
 
 async function users(env, url) {
