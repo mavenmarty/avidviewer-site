@@ -192,6 +192,8 @@ async function deleteUser(request, env, admin) {
     env.DB.prepare('DELETE FROM vault_keys WHERE user_id = ?1').bind(u.id),
     env.DB.prepare('DELETE FROM account_keys WHERE user_id = ?1').bind(u.id),
     env.DB.prepare('DELETE FROM attention_dismissed WHERE user_id = ?1').bind(u.id),
+    env.DB.prepare('DELETE FROM profile_lists WHERE user_id = ?1').bind(u.id),
+    env.DB.prepare('DELETE FROM playlist_order WHERE user_id = ?1').bind(u.id),
     env.DB.prepare('DELETE FROM device_playlists WHERE user_id = ?1').bind(u.id),
     env.DB.prepare('DELETE FROM account_playlists WHERE user_id = ?1').bind(u.id),
     env.DB.prepare('DELETE FROM devices WHERE user_id = ?1').bind(u.id),

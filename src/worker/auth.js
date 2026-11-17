@@ -18,6 +18,7 @@
 
 import { playlistsSave, playlistsSeal, playlistsRemove, playlistVault } from './playlists.js';
 import { attention, attentionDismiss, playlistsRetry } from './attention.js';
+import { listsGet, listsSave, orderGet, orderSave } from './lists.js';
 import { manage, catalogFor, profileSave, profileRemove, profilePin, profileVisibility, deviceSetProfiles, deviceStop, vaultKey, accountKeySave, deviceLogins, playlistsImport, playlistsAdopt } from './profiles.js';
 import {
   generateRegistrationOptions, verifyRegistrationResponse,
@@ -343,6 +344,8 @@ async function deleteAccount(request, env, user) {
     env.DB.prepare('DELETE FROM vault_keys WHERE user_id = ?1').bind(user.id),
     env.DB.prepare('DELETE FROM account_keys WHERE user_id = ?1').bind(user.id),
     env.DB.prepare('DELETE FROM attention_dismissed WHERE user_id = ?1').bind(user.id),
+    env.DB.prepare('DELETE FROM profile_lists WHERE user_id = ?1').bind(user.id),
+    env.DB.prepare('DELETE FROM playlist_order WHERE user_id = ?1').bind(user.id),
     env.DB.prepare('DELETE FROM device_playlists WHERE user_id = ?1').bind(user.id),
     env.DB.prepare('DELETE FROM account_playlists WHERE user_id = ?1').bind(user.id),
     env.DB.prepare('DELETE FROM devices WHERE user_id = ?1').bind(user.id),
@@ -368,7 +371,7 @@ export async function handleAccountApi(request, env, realUrl) {
     // (wrangler dev rewrites the Origin header to the real site's address, so that one is accepted locally too.)
     const origin = request.headers.get('origin');
     if (origin !== url.origin && origin !== realUrl.origin) return json({ error: 'Not allowed.' }, 403);
-  } else if (!(request.method === 'GET' && (p === '/api/me' || p === '/api/account/manage' || p === '/api/account/catalog' || p === '/api/account/playlists/vault' || p === '/api/account/device-logins' || p === '/api/account/attention' || p.startsWith('/api/admin/')))) {
+  } else if (!(request.method === 'GET' && (p === '/api/me' || p === '/api/account/manage' || p === '/api/account/catalog' || p === '/api/account/playlists/vault' || p === '/api/account/device-logins' || p === '/api/account/attention' || p === '/api/account/lists' || p === '/api/account/order' || p.startsWith('/api/admin/')))) {
     return json({ error: 'Use POST.' }, 405);
   }
 
@@ -404,6 +407,8 @@ export async function handleAccountApi(request, env, realUrl) {
     case '/api/account/vault/account-key': return accountKeySave(request, env, user);
     case '/api/account/device-logins': return request.method === 'GET' ? deviceLogins(env, user) : json({ error: 'Use GET.' }, 405);
     case '/api/account/attention': return request.method === 'GET' ? attention(env, user) : json({ error: 'Use GET.' }, 405);
+    case '/api/account/lists': return request.method === 'GET' ? listsGet(env, user, url) : listsSave(request, env, user);
+    case '/api/account/order': return request.method === 'GET' ? orderGet(env, user, url) : orderSave(request, env, user);
     case '/api/account/attention/dismiss': return attentionDismiss(request, env, user);
     case '/api/account/playlists/retry': return playlistsRetry(request, env, user);
     case '/api/account/playlists/import': return playlistsImport(request, env, user);

@@ -44,6 +44,7 @@
     var h = Math.round(m / 60); if (h < 24) return 'seen ' + h + ' h ago';
     var d = Math.round(h / 24); return d === 1 ? 'seen yesterday' : 'seen ' + d + ' days ago';
   }
+  function when(t) { var m = Math.round((Date.now() - t) / 60000); return m < 2 ? 'just now' : ago(t).replace('seen ', ''); }
   function dur(since) {
     var m = Math.max(1, Math.round((Date.now() - since) / 60000));
     return m < 60 ? m + ' min' : Math.floor(m / 60) + ' h ' + String(m % 60).padStart(2, '0') + ' min';
@@ -286,9 +287,15 @@
     var h = location.hash.replace(/^#/, '');
     var m = /^(edit|manage|new|finish)(?:=(.*))?$/.exec(h);
     editing = false;
-    if (PAGE === 'playlists') { if (m && m[1] === 'edit') return playlistEditor(pl(m[2]) || null); if (m && m[1] === 'new') return playlistEditor(null); return playlistsPage(); }
+    var sub = m && m[2] ? m[2].split('/') : [];
+    if (PAGE === 'playlists') {
+      if (m && m[1] === 'edit' && sub[1] === 'order' && pl(sub[0])) return orderTab(pl(sub[0]));
+      if (m && m[1] === 'edit') return playlistEditor(pl(sub[0]) || null);
+      if (m && m[1] === 'new') return playlistEditor(null);
+      return playlistsPage();
+    }
     if (PAGE === 'profiles') {
-      if (m && m[1] === 'manage' && prof(m[2])) return profileManager(prof(m[2]));
+      if (m && m[1] === 'manage' && prof(sub[0])) return profileManager(prof(sub[0]), sub[1] || '');
       if (m && m[1] === 'finish' && prof(m[2])) return kidsPins(prof(m[2]));
       if (m && m[1] === 'new') return newProfile();
       return profilesPage();
@@ -429,6 +436,7 @@
     editing = true;
     var b = body(p ? p.name : 'Add a playlist');
     b.insertBefore(back('Playlists', '#'), b.firstChild);
+    if (p) b.appendChild(subTabs([['Login & profiles', '#edit=' + p.id, ''], ['Order & names', '#edit=' + p.id + '/order', 'order']], ''));
     var f = el('form', 'mg-card'); f.noValidate = true;
     var type = p ? p.type : 'xtream';
     var seg = el('fieldset', 'seg small'); seg.setAttribute('aria-label', 'Type');
@@ -678,12 +686,21 @@
     });
   }
 
-  function profileManager(q) {
+  /** Tabs inside a page (a profile's Overview / What it can see / Favorites & lists; a playlist's Login / Order). */
+  function subTabs(items, current) {
+    var nav = el('nav', 'mg-subtabs'); nav.setAttribute('aria-label', 'Sections');
+    items.forEach(function (x) { var a = el('a', null, x[0]); a.href = x[1]; if (x[2] === current) a.setAttribute('aria-current', 'page'); nav.appendChild(a); });
+    return nav;
+  }
+  function profileManager(q, tab) {
     editing = true;
     var b = body(q.name);
     b.insertBefore(back('Profiles', '#'), b.firstChild);
     var on = q.devices.map(function (id) { return (dev(id) || {}).name; }).filter(Boolean);
     b.querySelector('.page-head').appendChild(el('p', 'soft', roleText(q) + (on.length ? ' · on ' + names(on) : ' · not on a device yet')));
+    b.appendChild(subTabs([['Overview', '#manage=' + q.id, ''], ['What ' + q.name + ' can see', '#manage=' + q.id + '/see', 'see'], ['Favorites & lists', '#manage=' + q.id + '/lists', 'lists']], tab));
+    if (tab === 'lists') return listsTab(q, b);
+    if (tab !== 'see') {
 
     // Name, PIN and colour; playlists; devices.
     var f = el('form', 'mg-card'); f.noValidate = true;
@@ -728,6 +745,8 @@
       say('Saved. Devices pick up changes within a minute while Avid Viewer is open.');
       editing = false; await load();
     });
+    return;
+    }
 
     // What this profile can see.
     var vis = el('section', 'mg-card');
@@ -811,6 +830,370 @@
     add(area, el('p', 'fineprint', q.kids ? 'Kids profile: everything starts hidden. Show the categories it may watch; adult categories can\'t be shown.'
       : 'Hidden categories and channels disappear from the guide, search, Favorites and Sports for this profile, on every device it\'s on.'),
       tabs, list, sv, el('p', 'fineprint', 'Names come from the playlist as ' + (cat.device || 'a device') + ' last downloaded it (' + new Date(r.updatedAt).toLocaleString() + ').'));
+    draw();
+  }
+
+  // ------------------------------------------------------------ Favorites & lists, Order & names (1.16.0)
+  // Favorites and lists belong to a profile and follow it to every device; order and names belong to a playlist.
+  // Changes here or on a TV go to the account; the most recent change wins. Live TV only for now.
+
+  /**
+   * Drag-and-drop for the rows of [ul] (each <li> has data-i and a .mg-handle): mouse or touch on the handle, the page
+   * scrolling at the window's edges; with a keyboard, Space on the handle picks the row up, ↑ ↓ move it, Space drops it,
+   * Esc puts it back. [move](from, to) changes the order and redraws.
+   */
+  var kbGrab = null; // {list, i} while a row is picked up with the keyboard
+  function sortable(ul, listId, move) {
+    ul.classList.add('mg-sortable');
+    ul.querySelectorAll('.mg-handle').forEach(function (h) {
+      var li = h.closest('li'), from = Number(li.dataset.i);
+      if (kbGrab && kbGrab.list === listId && kbGrab.i === from) { li.classList.add('mg-grabbed'); setTimeout(function () { h.focus(); }, 0); }
+      h.addEventListener('keydown', function (e) {
+        var grabbed = kbGrab && kbGrab.list === listId && kbGrab.i === from;
+        if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); kbGrab = grabbed ? null : { list: listId, i: from }; li.classList.toggle('mg-grabbed', !grabbed); say(grabbed ? 'Dropped.' : 'Picked up. Use the arrow keys, then Space to drop.'); }
+        else if (grabbed && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+          e.preventDefault();
+          var to = from + (e.key === 'ArrowUp' ? -1 : 1);
+          if (to < 0 || to >= ul.querySelectorAll(':scope > li[data-i]').length) return;
+          kbGrab = { list: listId, i: to }; move(from, to);
+        } else if (e.key === 'Escape' && grabbed) { kbGrab = null; li.classList.remove('mg-grabbed'); }
+      });
+      h.addEventListener('pointerdown', function (e) {
+        if (e.button !== 0) return;
+        e.preventDefault();
+        var rows = Array.prototype.slice.call(ul.querySelectorAll(':scope > li[data-i]'));
+        var startY = e.clientY, scrollStart = window.scrollY, to = from, line = el('li', 'mg-dropline'); line.setAttribute('aria-hidden', 'true');
+        line.appendChild(el('span', null, 'Drop here'));
+        li.classList.add('mg-dragging');
+        try { h.setPointerCapture(e.pointerId); } catch (err) {}
+        var lastY = e.clientY, timer = setInterval(function () {
+          var edge = 70, v = lastY < edge ? -(edge - lastY) / 3 : lastY > innerHeight - edge ? (lastY - innerHeight + edge) / 3 : 0;
+          if (v) { window.scrollBy(0, v); place(lastY); }
+        }, 16);
+        var others = rows.filter(function (r) { return r !== li; });
+        function place(y) {
+          lastY = y;
+          li.style.transform = 'translateY(' + (y - startY + window.scrollY - scrollStart) + 'px)';
+          to = 0;
+          others.forEach(function (r) { var bx = r.getBoundingClientRect(); if (y > bx.top + bx.height / 2) to++; });
+          if (to < others.length) ul.insertBefore(line, others[to]); else others[others.length - 1].after(line);
+        }
+        function moveH(ev) { place(ev.clientY); }
+        function up() {
+          clearInterval(timer);
+          h.removeEventListener('pointermove', moveH); h.removeEventListener('pointerup', up); h.removeEventListener('pointercancel', up);
+          li.classList.remove('mg-dragging'); li.style.transform = ''; line.remove();
+          if (to !== from) move(from, to);
+        }
+        h.addEventListener('pointermove', moveH); h.addEventListener('pointerup', up); h.addEventListener('pointercancel', up);
+      });
+    });
+  }
+  function handle(label) { var h = el('button', 'mg-handle', '⋮⋮'); h.type = 'button'; h.setAttribute('aria-label', 'Move ' + label + ' (drag, or Space then arrow keys)'); return h; }
+  function moveButtons(label, i, n, move) {
+    var box = el('span', 'mg-moves');
+    [['⤒', 'Move to top', 0], ['▲', 'Move up', i - 1], ['▼', 'Move down', i + 1], ['⤓', 'Move to bottom', n - 1]].forEach(function (x) {
+      var b = btn(x[0], 'mg-mv', function () { move(i, x[2]); });
+      b.title = x[1]; b.setAttribute('aria-label', x[1] + ': ' + label); b.disabled = x[2] < 0 || x[2] >= n || x[2] === i;
+      box.appendChild(b);
+    });
+    return box;
+  }
+  function moved(a, from, to) { a = a.slice(); var x = a.splice(from, 1)[0]; a.splice(to, 0, x); return a; }
+  /** Rename in place: an input with Save and Cancel; empty = back to the provider's name. */
+  function renameRow(slot, current, provider, save) {
+    slot.innerHTML = '';
+    var box = el('span', 'mg-rename');
+    var inp = el('input'); inp.value = current; inp.setAttribute('aria-label', 'New name for ' + provider); inp.maxLength = 80;
+    var ok = btn('Save', 'btn btn-primary btn-sm', function () { save(inp.value.trim()); });
+    var no = btn('Cancel', 'btn btn-ghost btn-sm', function () { save(null); });
+    inp.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); ok.click(); } if (e.key === 'Escape') { e.preventDefault(); no.click(); } });
+    add(box, add(el('span', 'mg-rename-row'), inp, ok, no), el('span', 'fineprint', 'From the provider: ' + provider + ' · Empty = the provider’s name · Enter saves, Esc cancels'));
+    slot.appendChild(box); inp.focus(); inp.select();
+  }
+  /** Saves a document a moment after the last change; an Undo stack of earlier versions. */
+  function saver(path, idKey, id, status) {
+    var timer = null, stack = [];
+    return {
+      push: function (prev) { stack.push(JSON.stringify(prev)); if (stack.length > 50) stack.shift(); },
+      undo: function () { return stack.length ? JSON.parse(stack.pop()) : null; },
+      canUndo: function () { return stack.length > 0; },
+      save: function (data) {
+        status.textContent = 'Saving…';
+        clearTimeout(timer);
+        timer = setTimeout(async function () {
+          var b = {}; b[idKey] = id; b.data = data;
+          var r = await post(path, b);
+          status.textContent = r._ok ? 'Saved · devices pick it up within a minute while Avid Viewer is open' : (r.error || 'Couldn’t save. Check your connection; your change is kept on this page.');
+          status.classList.toggle('err', !r._ok);
+        }, 500);
+      },
+    };
+  }
+  async function getJson(path) { return fetch(path, { credentials: 'same-origin' }).then(function (r) { return r.json(); }); }
+  function effectiveOrder(all, order) { var seen = {}; var out = []; (order || []).forEach(function (x) { if (all.indexOf(x) >= 0 && !seen[x]) { seen[x] = 1; out.push(x); } }); all.forEach(function (x) { if (!seen[x]) out.push(x); }); return out; }
+
+  // ---- a playlist's order and names
+  async function orderTab(p) {
+    editing = true;
+    var b = body(p.name);
+    b.insertBefore(back('Playlists', '#'), b.firstChild);
+    b.appendChild(subTabs([['Login & profiles', '#edit=' + p.id, ''], ['Order & names', '#edit=' + p.id + '/order', 'order']], 'order'));
+    var wait = el('p', 'soft', 'Loading the playlist’s categories…'); b.appendChild(wait);
+    var [cat, ord] = await Promise.all([getJson('/api/account/catalog?playlist=' + encodeURIComponent(p.id)), getJson('/api/account/order?playlist=' + encodeURIComponent(p.id))]);
+    wait.remove();
+    if (!cat.catalog) { b.appendChild(el('p', 'soft', 'No device has sent this playlist’s categories yet. Open Avid Viewer on a device that has it; they arrive within a minute.')); return; }
+    var groups = cat.catalog.live || [];
+    if (!groups.length) { b.appendChild(el('p', 'soft', 'This playlist has no live TV categories.')); return; }
+    var D = ord.data;
+    var status = el('p', 'mg-savestate', ord.updatedAt ? 'Last changed ' + when(ord.updatedAt) + ' by ' + (ord.updatedBy || 'a device') : 'In the provider’s order and names');
+    var sv = saver('/api/account/order', 'playlistId', p.id, status);
+    var selected = null, filter = '';
+    add(b, el('p', 'soft', 'The order and names here are what every profile and device shows for ' + p.name + '. What each profile can see is set on its own page.'));
+    var wrap = el('div', 'mg-order'); b.appendChild(wrap);
+    var foot = el('div', 'mg-order-foot'); b.appendChild(foot);
+    var allRaw = groups.map(function (g) { return g.n; });
+    function change(mut) { sv.push(D); D = JSON.parse(JSON.stringify(D)); mut(D); sv.save(D); draw(); }
+    function draw() {
+      wrap.innerHTML = '';
+      // Categories
+      var order = effectiveOrder(allRaw, D.groupOrder);
+      if (!selected) selected = order[0];
+      var left = el('section', 'mg-card mg-order-cats');
+      add(left, el('h2', null, 'Live TV categories · ' + order.length));
+      add(left, add(el('div', 'mg-arrange'), el('span', null, 'Arrange:'),
+        btn('A–Z', 'linkish', function () { change(function (d) { d.groupOrder = order.slice().sort(function (a, b2) { return (d.groupNames[a] || a).localeCompare(d.groupNames[b2] || b2); }); }); }),
+        btn('Provider’s order', 'linkish', function () { change(function (d) { d.groupOrder = []; }); })));
+      var ul = el('ul', 'mg-rows');
+      function moveCat(from, to) { change(function (d) { d.groupOrder = moved(order, from, to); }); }
+      order.forEach(function (raw, i) {
+        var g = groups.find(function (x) { return x.n === raw; }) || { c: 0 };
+        var shown = D.groupNames[raw] || raw;
+        var li = el('li', raw === selected ? 'on' : null); li.dataset.i = i;
+        var nameSlot = el('span', 'mg-name');
+        var nm = btn(shown, 'linkish mg-pick', function () { selected = raw; draw(); });
+        add(nameSlot, nm, D.groupNames[raw] ? el('span', 'mg-provider', 'from the provider: ' + raw) : null);
+        var ren = btn('Rename', 'linkish', function () {
+          renameRow(nameSlot, shown, raw, function (v) {
+            if (v === null) return draw();
+            change(function (d) { if (v && v !== raw) d.groupNames[raw] = v; else delete d.groupNames[raw]; });
+          });
+        });
+        add(li, handle(shown), el('span', 'mg-pos', String(i + 1)), nameSlot, el('span', 'mg-count', String(g.c)), ren, moveButtons(shown, i, order.length, moveCat));
+        ul.appendChild(li);
+      });
+      left.appendChild(ul);
+      sortable(ul, 'cats', moveCat);
+      // Channels of the selected category
+      var g = groups.find(function (x) { return x.n === selected; }) || { ch: [] };
+      var allCh = g.ch.map(function (c) { return c[0]; });
+      var nameOf = {}; g.ch.forEach(function (c) { nameOf[c[0]] = c[1]; });
+      var corder = effectiveOrder(allCh, D.channelOrder[selected]);
+      var right = el('section', 'mg-card mg-order-chans');
+      var find = el('input'); find.type = 'search'; find.placeholder = 'Find a channel'; find.value = filter; find.setAttribute('aria-label', 'Find a channel');
+      find.addEventListener('input', function () { filter = find.value; drawChans(); find.focus(); });
+      add(right, add(el('div', 'mg-row-head'), el('h2', null, (D.groupNames[selected] || selected) + ' · ' + corder.length + ' channels'), find));
+      add(right, add(el('div', 'mg-arrange'), el('span', null, 'Arrange:'),
+        btn('A–Z', 'linkish', function () { change(function (d) { d.channelOrder[selected] = corder.slice().sort(function (a, b2) { return (d.channelNames[a] || nameOf[a] || '').localeCompare(d.channelNames[b2] || nameOf[b2] || ''); }); }); }),
+        btn('Provider’s order', 'linkish', function () { change(function (d) { delete d.channelOrder[selected]; }); })));
+      var cul = el('ul', 'mg-rows'); right.appendChild(cul);
+      var note = el('p', 'fineprint'); right.appendChild(note);
+      function moveCh(from, to) { change(function (d) { d.channelOrder[selected] = moved(corder, from, to); }); }
+      function drawChans() {
+        cul.innerHTML = '';
+        var q = filter.trim().toLowerCase();
+        var list = corder.map(function (id, i) { return { id: id, i: i }; }).filter(function (x) { return !q || (D.channelNames[x.id] || nameOf[x.id] || '').toLowerCase().indexOf(q) >= 0; });
+        var cap = 400;
+        list.slice(0, cap).forEach(function (x) {
+          var id = x.id, i = x.i, shown = D.channelNames[id] || nameOf[id] || id;
+          var li = el('li'); li.dataset.i = i;
+          var nameSlot = el('span', 'mg-name'); add(nameSlot, el('span', 'mg-strong', shown), D.channelNames[id] ? el('span', 'mg-provider', 'from the provider: ' + (nameOf[id] || id)) : null);
+          var ren = btn('Rename', 'linkish', function () {
+            renameRow(nameSlot, shown, nameOf[id] || id, function (v) {
+              if (v === null) return drawChans();
+              change(function (d) { if (v && v !== nameOf[id]) d.channelNames[id] = v; else delete d.channelNames[id]; });
+            });
+          });
+          add(li, q ? el('span', 'mg-handle-off') : handle(shown), el('span', 'mg-pos', String(i + 1)), nameSlot, ren, moveButtons(shown, i, corder.length, moveCh));
+          cul.appendChild(li);
+        });
+        if (!q) sortable(cul, 'chans:' + selected, moveCh);
+        note.textContent = (list.length > cap ? 'Showing the first ' + cap + ' of ' + list.length + '; use Find, ⤒ / ⤓ or A–Z for the rest. ' : '') +
+          (q ? 'Clear Find to drag. ' : '') + 'Drag by ⋮⋮ (the page scrolls at the edges), ⤒ / ⤓ for the top or bottom, ▲ ▼ for one step. Keyboard: Tab to ⋮⋮, Space, ↑ ↓, Space. A renamed channel shows the provider’s name underneath.';
+      }
+      drawChans();
+      add(wrap, left, right);
+      foot.innerHTML = '';
+      add(foot, status, btn('Undo last change', 'btn btn-ghost', function () { var u = sv.undo(); if (u) { D = u; sv.save(D); draw(); } }),
+        btn('Reset all to the provider’s order and names', 'btn btn-danger', function () {
+          if (!confirm('Put every category and channel of ' + p.name + ' back in the provider’s order, with the provider’s names, on every device?')) return;
+          change(function (d) { d.groupOrder = []; d.groupNames = {}; d.channelOrder = {}; d.channelNames = {}; });
+        }));
+    }
+    draw();
+  }
+
+  // ---- a profile's favorites and lists
+  async function listsTab(q, b) {
+    var wait = el('p', 'soft', 'Loading…'); b.appendChild(wait);
+    var mine = S.playlists.filter(function (p) { return q.playlists.indexOf(p.id) >= 0 && !p.removing; });
+    var [L, cats, ords] = await Promise.all([
+      getJson('/api/account/lists?profile=' + encodeURIComponent(q.id)),
+      Promise.all(mine.map(function (p) { return getJson('/api/account/catalog?playlist=' + encodeURIComponent(p.id)); })),
+      Promise.all(mine.map(function (p) { return getJson('/api/account/order?playlist=' + encodeURIComponent(p.id)); })),
+    ]);
+    wait.remove();
+    // Every channel this profile may see: key "<playlist>:<id>" → {name, group, playlist}.
+    var CH = {}, byPl = {};
+    mine.forEach(function (p, k) {
+      var c = cats[k].catalog, names = (ords[k].data || {}).channelNames || {}, gnames = (ords[k].data || {}).groupNames || {};
+      var v = q.visibility[p.id] || { hidden: { live: [] }, allowed: { live: [] }, channels: [] };
+      byPl[p.id] = [];
+      if (!c) return;
+      c.live.forEach(function (g) {
+        var ok = q.kids ? (v.allowed.live || []).indexOf(g.n) >= 0 && !ADULT.test(g.n) : (v.hidden.live || []).indexOf(g.n) < 0;
+        if (!ok) return;
+        var shownG = gnames[g.n] || g.n;
+        byPl[p.id].push({ raw: g.n, name: shownG, ch: g.ch });
+        g.ch.forEach(function (x) { if ((v.channels || []).indexOf(x[0]) < 0) CH[p.id + ':' + x[0]] = { name: names[x[0]] || x[1], group: shownG, playlist: p.name }; });
+      });
+    });
+    var D = L.data, current = 'fav';
+    var status = el('p', 'mg-savestate', L.updatedAt ? 'Last changed ' + when(L.updatedAt) + ' by ' + (L.updatedBy || 'a device') : 'Nothing saved yet');
+    var sv = saver('/api/account/lists', 'profileId', q.id, status);
+    var wrap = el('div', 'mg-lists'); b.appendChild(wrap);
+    var foot = el('div', 'mg-order-foot'); b.appendChild(foot);
+    if (!mine.length) { wrap.appendChild(el('p', 'soft', 'Give ' + q.name + ' a playlist first (Overview), then add channels to its lists.')); return; }
+    function change(mut) { sv.push(D); D = JSON.parse(JSON.stringify(D)); mut(D); sv.save(D); draw(); }
+    function keysOf(d) { return current === 'fav' ? d.favorites : (d.lists.find(function (l) { return l.id === current; }) || { keys: [] }).keys; }
+    function setKeys(d, keys) { if (current === 'fav') d.favorites = keys; else d.lists = d.lists.map(function (l) { return l.id === current ? Object.assign({}, l, { keys: keys }) : l; }); }
+    function draw() {
+      wrap.innerHTML = '';
+      if (current !== 'fav' && !D.lists.some(function (l) { return l.id === current; })) current = 'fav';
+      // Lists
+      var left = el('div', 'mg-lists-left');
+      var fav = btn('★ Favorites', 'mg-listbtn' + (current === 'fav' ? ' on' : ''), function () { current = 'fav'; adding = false; draw(); });
+      fav.appendChild(el('span', 'mg-count', String(D.favorites.length)));
+      left.appendChild(fav);
+      var lul = el('ul', 'mg-rows mg-listrows');
+      function moveList(from, to) { change(function (d) { d.lists = moved(d.lists, from, to); }); }
+      D.lists.forEach(function (l, i) {
+        var li = el('li', l.id === current ? 'on' : null); li.dataset.i = i;
+        var pick = btn(l.name + (l.hidden ? ' (hidden on the TV)' : ''), 'linkish mg-pick', function () { current = l.id; adding = false; draw(); });
+        add(li, handle(l.name), pick, el('span', 'mg-count', String(l.keys.length)));
+        lul.appendChild(li);
+      });
+      left.appendChild(lul);
+      sortable(lul, 'lists', moveList);
+      add(left, btn('＋ New list', 'btn btn-ghost btn-sm', function () {
+        var n = prompt('Name for the new list'); if (!n || !n.trim()) return;
+        if (D.lists.some(function (l) { return l.name.toLowerCase() === n.trim().toLowerCase(); })) return say('There’s already a list called ' + n.trim() + '.', true);
+        var id = 'w' + Math.random().toString(36).slice(2, 10);
+        change(function (d) { d.lists.push({ id: id, name: n.trim(), hidden: false, keys: [] }); }); current = id; draw();
+      }), el('p', 'fineprint', 'Drag lists to change their order on the TV. ★ Favorites is always first.'));
+      // Channels in the selected list
+      var keys = keysOf(D);
+      var right = el('section', 'mg-card mg-lists-right');
+      var title = current === 'fav' ? '★ Favorites' : (D.lists.find(function (l) { return l.id === current; }) || {}).name;
+      add(right, add(el('div', 'mg-row-head'), el('h2', null, title + ' · ' + keys.length + (keys.length === 1 ? ' channel' : ' channels')),
+        btn(adding ? 'Done adding' : '＋ Add channels', adding ? 'btn btn-ghost' : 'btn btn-primary', function () { adding = !adding; draw(); })));
+      if (adding) right.appendChild(addPanel(keys));
+      add(right, add(el('div', 'mg-arrange'), el('span', null, 'Arrange:'),
+        btn('A–Z', 'linkish', function () { change(function (d) { setKeys(d, keysOf(d).slice().sort(function (a, b2) { return ((CH[a] || {}).name || a).localeCompare((CH[b2] || {}).name || b2); })); }); })));
+      var ul = el('ul', 'mg-rows');
+      function moveCh(from, to) { change(function (d) { setKeys(d, moved(keysOf(d), from, to)); }); }
+      if (!keys.length) ul.appendChild(el('li', 'soft', 'No channels yet. Choose Add channels.'));
+      keys.forEach(function (k, i) {
+        var c = CH[k], li = el('li'); li.dataset.i = i;
+        var pid = k.split(':')[0], cid = k.slice(pid.length + 1);
+        var nameSlot = el('span', 'mg-name');
+        add(nameSlot, el('span', 'mg-strong', c ? c.name : 'A channel not in ' + q.name + '’s playlists'), el('span', 'mg-provider', c ? c.playlist + ' · ' + c.group : 'hidden for ' + q.name + ', or its playlist was removed'));
+        var acts = [];
+        if (c) acts.push(btn('Rename', 'linkish', function () {
+          var k2 = mine.findIndex(function (p) { return p.id === pid; });
+          var provider = ((cats[k2].catalog.live.find(function (g) { return g.ch.some(function (x) { return x[0] === cid; }); }) || { ch: [] }).ch.find(function (x) { return x[0] === cid; }) || [0, c.name])[1];
+          renameRow(nameSlot, c.name, provider, async function (v) {
+            if (v === null) return draw();
+            var od = JSON.parse(JSON.stringify(ords[k2].data));
+            if (v && v !== provider) od.channelNames[cid] = v; else delete od.channelNames[cid];
+            var r = await post('/api/account/order', { playlistId: pid, data: od });
+            if (!r._ok) return say(r.error || 'Couldn’t rename it.', true);
+            ords[k2].data = r.data; CH[k].name = v || provider;
+            say('Renamed in ' + c.playlist + ': every profile and device shows the new name.'); draw();
+          });
+        }));
+        var rm = btn('✕', 'mg-mv mg-rm', function () { change(function (d) { setKeys(d, keysOf(d).filter(function (x) { return x !== k; })); }); });
+        rm.title = 'Remove from ' + title; rm.setAttribute('aria-label', 'Remove ' + (c ? c.name : 'this channel') + ' from ' + title);
+        add(li, handle(c ? c.name : 'channel'), el('span', 'mg-pos', String(i + 1)), nameSlot);
+        acts.forEach(function (a) { li.appendChild(a); });
+        add(li, moveButtons(c ? c.name : 'channel', i, keys.length, moveCh), rm);
+        ul.appendChild(li);
+      });
+      right.appendChild(ul);
+      sortable(ul, 'list:' + current, moveCh);
+      add(right, el('p', 'fineprint', 'Drag by ⋮⋮ (the page scrolls at the edges), ⤒ / ⤓ for the top or bottom, ▲ ▼ for one step. Keyboard: Tab to ⋮⋮, Space, ↑ ↓, Space. Rename changes the channel’s name in its playlist, on every profile and device. Changes made on the TV come back here; the most recent change wins.'));
+      if (current !== 'fav') {
+        var l = D.lists.find(function (x) { return x.id === current; });
+        add(right, add(el('div', 'mg-listopts'), el('strong', null, 'List options:'),
+          btn('Rename', 'linkish', function () { var n = prompt('New name for ' + l.name, l.name); if (n && n.trim()) change(function (d) { d.lists.forEach(function (x) { if (x.id === l.id) x.name = n.trim(); }); }); }),
+          btn(l.hidden ? 'Show on the TV' : 'Hide on the TV', 'linkish', function () { change(function (d) { d.lists.forEach(function (x) { if (x.id === l.id) x.hidden = !x.hidden; }); }); }),
+          btn('Delete list', 'linkish mg-danger', function () { if (confirm('Delete the list ' + l.name + '? Its channels stay in your playlists.')) change(function (d) { d.lists = d.lists.filter(function (x) { return x.id !== l.id; }); }); })));
+      }
+      add(wrap, left, right);
+      foot.innerHTML = '';
+      add(foot, status, btn('Undo last change', 'btn btn-ghost', function () { var u = sv.undo(); if (u) { D = u; sv.save(D); draw(); } }));
+    }
+    var adding = false, addPl = mine[0] && mine[0].id, addCat = '', addFind = '', picked = {};
+    function addPanel(keys) {
+      var box = el('div', 'mg-addpanel');
+      var find = el('input'); find.type = 'search'; find.placeholder = 'Search ' + q.name + '’s channels'; find.value = addFind; find.setAttribute('aria-label', 'Search channels');
+      var sel = el('select', 'mg-select'); sel.setAttribute('aria-label', 'Playlist');
+      mine.forEach(function (p) { var o = el('option', null, p.name); o.value = p.id; o.selected = p.id === addPl; sel.appendChild(o); });
+      add(box, add(el('div', 'mg-row-head'), find, sel));
+      var cols = el('div', 'mg-addcols'), catNav = el('nav', 'mg-addcats'), res = el('div', 'mg-addres');
+      add(cols, catNav, res); box.appendChild(cols);
+      var footer = el('div', 'mg-addfoot'); box.appendChild(footer);
+      function drawAdd() {
+        catNav.innerHTML = ''; res.innerHTML = '';
+        var gs = byPl[addPl] || [];
+        if (!gs.length) { res.appendChild(el('p', 'soft', 'No categories for this playlist yet (a device sends them after it loads the playlist).')); }
+        if (!addCat && gs.length) addCat = gs[0].raw;
+        gs.forEach(function (g) {
+          var a = btn(g.name, 'mg-addcat' + (g.raw === addCat && !addFind ? ' on' : ''), function () { addCat = g.raw; addFind = ''; find.value = ''; drawAdd(); });
+          a.appendChild(el('span', 'mg-count', String(g.ch.length))); catNav.appendChild(a);
+        });
+        var qq = addFind.trim().toLowerCase();
+        var rows = [];
+        if (qq) Object.keys(CH).forEach(function (k) { if (CH[k].name.toLowerCase().indexOf(qq) >= 0) rows.push(k); });
+        else (gs.find(function (g) { return g.raw === addCat; }) || { ch: [] }).ch.forEach(function (x) { var k = addPl + ':' + x[0]; if (CH[k]) rows.push(k); });
+        res.appendChild(el('p', 'fineprint', (qq ? rows.length + ' match “' + addFind.trim() + '” in all of ' + q.name + '’s playlists' : rows.length + ' channels') + (rows.length > 300 ? ' · showing the first 300' : '')));
+        rows.slice(0, 300).forEach(function (k) {
+          var c = CH[k], already = keys.indexOf(k) >= 0;
+          var l = el('label', 'mg-addrow'); var cb = el('input'); cb.type = 'checkbox'; cb.checked = already || !!picked[k]; cb.disabled = already;
+          cb.addEventListener('change', function () { if (cb.checked) picked[k] = 1; else delete picked[k]; drawFoot(); });
+          add(l, cb, add(el('span', 'mg-name'), el('span', 'mg-strong', c.name), el('span', 'mg-provider', c.playlist + ' · ' + c.group)), already ? el('span', 'mg-ok', 'Already in the list') : null);
+          res.appendChild(l);
+        });
+        drawFoot();
+      }
+      function drawFoot() {
+        footer.innerHTML = '';
+        var n = Object.keys(picked).length;
+        add(footer, el('span', null, n ? n + ' selected · added at the end' : 'Tick channels to add them'),
+          btn('Add ' + (n || '') + (n === 1 ? ' channel' : ' channels'), 'btn btn-primary', function () {
+            if (!n) return;
+            var add2 = Object.keys(picked); picked = {};
+            change(function (d) { setKeys(d, keysOf(d).concat(add2.filter(function (k) { return keysOf(d).indexOf(k) < 0; }))); });
+            say('Added ' + add2.length + (add2.length === 1 ? ' channel.' : ' channels.'));
+          }));
+        footer.lastChild.disabled = !n;
+      }
+      var t = null;
+      find.addEventListener('input', function () { clearTimeout(t); t = setTimeout(function () { addFind = find.value; drawAdd(); find.focus(); }, 200); });
+      sel.addEventListener('change', function () { addPl = sel.value; addCat = ''; addFind = ''; drawAdd(); });
+      drawAdd();
+      return box;
+    }
     draw();
   }
 

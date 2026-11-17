@@ -16,6 +16,7 @@
 
 import { handlePlaylistTvApi } from './playlists.js';
 import { handleProfileTvApi } from './profiles.js';
+import { handleListsTvApi } from './lists.js';
 import { json, randomToken, sha256hex, ipOf, body } from './auth.js';
 
 const ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // same as setup codes: no 0/O, 1/I/L
@@ -242,7 +243,7 @@ export async function handleTvApi(request, env, realUrl) {
   const url = env.SITE_ORIGIN ? new URL(realUrl.pathname + realUrl.search, env.SITE_ORIGIN) : realUrl; // local dev, as in auth.js
   const p = url.pathname;
   if (!p.startsWith('/api/tv/')) return null;
-  const pl = (await handlePlaylistTvApi(request, env, p, url)) || (await handleProfileTvApi(request, env, p));
+  const pl = (await handlePlaylistTvApi(request, env, p, url)) || (await handleProfileTvApi(request, env, p)) || (await handleListsTvApi(request, env, p));
   if (pl) return pl;
   if (p === '/api/tv/me') return request.method === 'GET' ? tvMe(request, env) : json({ error: 'Use GET.' }, 405);
   if (p === '/api/tv/backups') return request.method === 'GET' ? tvBackupList(request, env) : json({ error: 'Use GET.' }, 405);
