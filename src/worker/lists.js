@@ -25,21 +25,39 @@ const obj = (o, n, fv) => {
   return out;
 };
 
+// 1.18.0: how lists and a playlist's channels are sorted. A document without them (an older app) keeps the stored one.
+const LIST_SORT = ['az', 'manual'];
+const CHANNEL_SORT = ['provider', 'az', 'manual'];
+const pick = (v, ok) => (ok.includes(v) ? v : undefined);
 export function cleanLists(d) {
   const keys = (a) => [...new Set(arr(a, 5000, (k) => str(k, 200)))];
-  return {
+  const out = {
     favorites: keys(d?.favorites),
-    lists: arr(d?.lists, 100, (l) => (l && typeof l === 'object' ? { id: str(l.id, 60) || null, name: str(l.name, 60).trim(), hidden: Boolean(l.hidden), keys: keys(l.keys) } : null))
+    lists: arr(d?.lists, 100, (l) => (l && typeof l === 'object' ? { id: str(l.id, 60) || null, name: str(l.name, 60).trim(), hidden: Boolean(l.hidden), keys: keys(l.keys), sort: pick(l.sort, LIST_SORT) } : null))
       .filter((l) => l && l.id && l.name),
   };
+  const fs = pick(d?.favSort, LIST_SORT); if (fs) out.favSort = fs;
+  out.lists.forEach((l) => { if (!l.sort) delete l.sort; });
+  return out;
 }
 export function cleanOrder(d) {
-  return {
+  const out = {
     groupOrder: [...new Set(arr(d?.groupOrder, 5000, (x) => str(x, 200)))],
     groupNames: obj(d?.groupNames, 5000, (v) => str(v, 80).trim()),
     channelOrder: obj(d?.channelOrder, 3000, (v) => [...new Set(arr(v, 20000, (x) => str(x, 120)))]),
     channelNames: obj(d?.channelNames, 20000, (v) => str(v, 80).trim()),
   };
+  const cs = pick(d?.channelSort, CHANNEL_SORT); if (cs) out.channelSort = cs;
+  return out;
+}
+/** Sorts a document from an older app doesn't carry stay as they were. */
+export function keepSorts(next, cur, kind) {
+  if (!cur) return next;
+  if (kind === 'order') { if (!next.channelSort && cur.channelSort) next.channelSort = cur.channelSort; return next; }
+  if (!next.favSort && cur.favSort) next.favSort = cur.favSort;
+  const was = new Map((cur.lists || []).map((l) => [l.id, l.sort]));
+  next.lists.forEach((l) => { if (!l.sort && was.get(l.id)) l.sort = was.get(l.id); });
+  return next;
 }
 const hashOf = async (data) => (await sha256hex(JSON.stringify(data))).slice(0, 16);
 
@@ -56,7 +74,9 @@ export function combine(account, device, deviceNewer) {
     if (same) same.keys = join(same.keys, l.keys);
     else lists.push({ ...l });
   }
-  return { favorites: join(a.favorites, b.favorites), lists };
+  const out = { favorites: join(a.favorites, b.favorites), lists };
+  const fs = a.favSort || b.favSort; if (fs) out.favSort = fs;
+  return out;
 }
 
 async function tvSync(request, env) {
@@ -80,7 +100,7 @@ async function tvSync(request, env) {
     let next = null;
     if (!cur) next = data;
     else if (!merged) next = combine(JSON.parse(cur.data), data, at > cur.updated_at);
-    else if (at >= cur.updated_at) next = data;
+    else if (at >= cur.updated_at) next = keepSorts(data, JSON.parse(cur.data), 'lists');
     if (next && JSON.stringify(next).length <= MAX_DOC) {
       await env.DB.prepare(`INSERT INTO profile_lists (profile_id, user_id, data, updated_at, updated_by) VALUES (?1, ?2, ?3, ?4, ?5)
         ON CONFLICT(profile_id) DO UPDATE SET data = ?3, updated_at = ?4, updated_by = ?5`).bind(id, d.user_id, JSON.stringify(next), Math.max(at, cur?.updated_at || 0), d.name).run();
@@ -92,7 +112,8 @@ async function tvSync(request, env) {
     if (!myPlaylists.has(id)) continue;
     const data = cleanOrder(p.data);
     const at = Math.min(now, Number(p.changedAt) || now);
-    const cur = await env.DB.prepare('SELECT updated_at FROM playlist_order WHERE playlist_id = ?1').bind(id).first();
+    const cur = await env.DB.prepare('SELECT data, updated_at FROM playlist_order WHERE playlist_id = ?1').bind(id).first();
+    if (cur) keepSorts(data, JSON.parse(cur.data), 'order');
     if ((!cur || at >= cur.updated_at) && JSON.stringify(data).length <= MAX_DOC) {
       await env.DB.prepare(`INSERT INTO playlist_order (playlist_id, user_id, data, updated_at, updated_by) VALUES (?1, ?2, ?3, ?4, ?5)
         ON CONFLICT(playlist_id) DO UPDATE SET data = ?3, updated_at = ?4, updated_by = ?5`).bind(id, d.user_id, JSON.stringify(data), at, d.name).run();
