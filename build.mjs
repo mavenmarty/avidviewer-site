@@ -165,8 +165,6 @@ async function main() {
   // Passkeys in the browser: @simplewebauthn/browser's bundle (global SimpleWebAuthnBrowser).
   await mkdir(join(OUT, 'js'), { recursive: true });
   await cp('node_modules/@simplewebauthn/browser/dist/bundle/index.umd.min.js', join(OUT, 'js', 'webauthn.js'));
-  // Web player check: hls.js for live (HLS) streams, served from this site, not a CDN.
-  await cp('node_modules/hls.js/dist/hls.min.js', join(OUT, 'js', 'hls.js'));
 
   for (const f of await readdir('src/pages')) {
     if (!f.endsWith('.html')) continue;
@@ -176,7 +174,6 @@ async function main() {
     const scripts = name === 'index' ? '<script src="/notify.js" defer></script>'
       : name === 'playlists' || name === 'profiles' || name === 'devices' ? '<script src="/js/webauthn.js" defer></script><script src="/playlists.js" defer></script><script src="/manage.js" defer></script><script src="/attention.js" defer></script>'
       : name === 'signin' || name === 'account' || name === 'backups' || name === 'link' ? '<script src="/js/webauthn.js" defer></script><script src="/account.js" defer></script>' + (name === 'account' || name === 'backups' ? '<script src="/attention.js" defer></script>' : '')
-      : name === 'player-check' ? '<script src="/js/hls.js" defer></script><script src="/playercheck.js" defer></script>'
       : name === 'admin' ? '<script src="/js/webauthn.js" defer></script><script src="/admin.js" defer></script>' : '';
     const html = layout({ ...meta, path, body, scripts });
     if (name === 'index') await writeFile(join(OUT, 'index.html'), html);

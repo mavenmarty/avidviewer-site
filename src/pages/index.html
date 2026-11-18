@@ -6,7 +6,7 @@
       <h1 id="hero-title">Set up once.<br>Every TV follows.</h1>
       <p class="lede">Add your playlists, create a profile for everyone, and arrange favorites, lists, categories and channels at avidviewer.app. Avid Viewer sends it all to every TV in the house — and changes made on a TV come back too.</p>
       <div class="row" style="gap: 12px">
-        <a class="btn btn-primary" href="#notify">Get launch news</a>
+        <a class="btn btn-primary" href="/playlists/">Set up your account</a>
         <a class="btn btn-ghost" href="#how">See how it works</a>
       </div>
     </div>
@@ -49,10 +49,10 @@
 <section id="accounts" class="band section" aria-labelledby="accounts-title">
   <div class="wrap stack" style="gap: 40px">
     <div class="stack" style="max-width: 720px">
-      <span class="pill pill-blue" style="align-self: flex-start">Coming with Avid Viewer accounts</span>
+      <span class="pill pill-accent" style="align-self: flex-start">Available now with an Avid Viewer account</span>
       <h2 id="accounts-title" style="font-size: clamp(32px, 4.5vw, 44px); line-height: 1.05">Pick up where you left off — on any TV</h2>
-      <p class="lede">An Avid Viewer account will keep your place in every show and a safe copy of your whole setup. Change rooms, change TVs, start over on a new one — nothing is lost.</p>
-      <p class="fineprint">Accounts add app features — sync, backups and the web player. They don't include any channels or content.</p>
+      <p class="lede">Your Avid Viewer account keeps your place in every show and a safe copy of your whole setup. Change rooms, change TVs, start over on a new one — nothing is lost.</p>
+      <p class="fineprint">Accounts add app features — sync, backups and picking up where you left off. They don't include any channels or content.</p>
     </div>
     <div class="row">
       <div class="card big-card">
@@ -63,10 +63,10 @@
         </div>
         <h3>Pick up where you left off</h3>
         <ul>
-          <li>Stop on one TV, resume to the second on another</li>
-          <li>Watched episodes ticked off, season by season — always know what's next</li>
-          <li>Each profile keeps its own history, so nobody loses your place</li>
-          <li>Movies too: “Continue watching” on every screen</li>
+          <li>Stop on one TV, resume on another, right where you stopped</li>
+          <li>Watched episodes ticked off, season by season — a series stays in Continue watching until its newest episode is watched</li>
+          <li>Live TV too: the channel you were watching, until its program ends</li>
+          <li>Each profile keeps its own history, locked so only your TVs can read it — not even this website</li>
         </ul>
       </div>
       <div class="card big-card">
@@ -77,19 +77,19 @@
         </div>
         <h3>Cloud backups</h3>
         <ul>
-          <li>Backs up on its own — playlists, profiles, lists and settings</li>
+          <li>Backs up on its own every day — playlists, profiles, lists and settings</li>
           <li>Locked with your PIN before it leaves the TV. We can't open it.</li>
-          <li>New TV? Sign in, pick a backup, and you're back in minutes</li>
-          <li>Recent backups kept, so you can roll back a mistake</li>
+          <li>New TV? Link it, pick a backup, and you're back in minutes</li>
+          <li>One backup per TV, its most recent, kept for 30 days after you remove a TV</li>
         </ul>
       </div>
     </div>
     <div class="banner">
       <div>
-        <h3>Away from the TV? The web player is on the way.</h3>
-        <p>Sign in at avidviewer.app on a laptop and your guide, library and lists will be there — with every show right where you left it.</p>
+        <h3>Manage it all from your phone or laptop.</h3>
+        <p>Add playlists, give each profile its lists and what it can see, and see what's playing on each TV — at avidviewer.app, in any browser. Watching stays on your TVs.</p>
       </div>
-      <a class="btn btn-ghost" href="#notify">Tell me when it's ready</a>
+      <a class="btn btn-ghost" href="/playlists/">Open my account</a>
     </div>
   </div>
 </section>
@@ -117,18 +117,17 @@
     <div class="row" style="gap: 16px">
       <div class="device"><strong>Android TV</strong><span class="pill pill-accent">Available</span></div>
       <div class="device"><strong>Fire TV</strong><span class="pill pill-accent">Available</span></div>
-      <div class="device"><strong>Web browser</strong><span class="pill pill-blue">With your account</span></div>
       <div class="device"><strong>Roku</strong><span class="pill pill-dim">Planned</span></div>
       <div class="device"><strong>Apple TV</strong><span class="pill pill-dim">Planned</span></div>
-      <div class="device"><strong>iPhone &amp; Android</strong><span class="pill pill-dim">Exploring</span></div>
+      <div class="device"><strong>iPhone &amp; Android phones and tablets</strong><span class="pill pill-dim">Planned</span></div>
     </div>
   </div>
 </section>
 
 <section id="notify" class="section" aria-labelledby="notify-title">
   <div class="wrap notify">
-    <h2 id="notify-title" style="font-size: 40px">Be first in line</h2>
-    <p class="lede">Accounts, cloud backups and pick-up-where-you-left-off are on the way. Leave your email and we'll tell you when they launch — nothing else.</p>
+    <h2 id="notify-title" style="font-size: 40px">Hear about new devices</h2>
+    <p class="lede">Phone and tablet apps, Apple TV and Roku are planned. Leave your email and we'll tell you when they launch — nothing else.</p>
     <form id="notify-form" action="/api/notify" method="post">
       <label for="email" class="hp">Email address</label>
       <input id="email" name="email" type="email" required autocomplete="email" placeholder="you@example.com" aria-label="Email address">
