@@ -956,6 +956,8 @@
       rows.forEach(function (r) {
         if (r.v.t === 'h') hideAt[norm(r.v.series)] = Math.max(hideAt[norm(r.v.series)] || 0, r.at);
         else if (r.v.t === 'e') (groups[norm(r.v.series)] = groups[norm(r.v.series)] || []).push(r);
+        // 1.18.0: the last live channel, until the program that was on ends.
+        else if (r.v.t === 'l') { if (Date.now() < (r.v.until || 0)) out.push({ kind: 'l', at: r.at, r: r }); }
         else if (!r.v.done) out.push({ kind: 'm', at: r.at, r: r });
       });
       Object.keys(groups).forEach(function (k) {
@@ -975,15 +977,16 @@
       var items = shown(rows);
       add(list, el('h2', null, 'Continue watching \u00b7 ' + items.length));
       if (!items.length) { list.appendChild(el('p', 'soft', q.off ? '' : 'Nothing yet. Where ' + q.name + ' stops in a movie or episode shows up here and on every TV.')); return; }
-      add(list, el('p', 'soft', 'Movies part-way, and series until their latest episode is watched (a new episode or season brings a series back), from every TV. Locked so only your TVs and your passkey can read it.'));
+      add(list, el('p', 'soft', 'Movies part-way, series until their latest episode is watched (a new episode or season brings a series back), and the last live channel until its program ends, from every TV. Locked so only your TVs and your passkey can read it.'));
       var ul = el('ul', 'mg-rows mg-watch');
       items.forEach(function (it) {
-        var v = it.kind === 'm' ? it.r.v : it.top.v, li = el('li');
-        var what = it.kind === 'm' ? 'Movie \u00b7 ' + clock(v.pos) + (v.dur ? ' of ' + clock(v.dur) : '')
+        var v = it.kind === 'm' || it.kind === 'l' ? it.r.v : it.top.v, li = el('li');
+        var what = it.kind === 'l' ? 'Live TV \u00b7 until ' + new Date(v.until).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+          : it.kind === 'm' ? 'Movie \u00b7 ' + clock(v.pos) + (v.dur ? ' of ' + clock(v.dur) : '')
           : it.part ? 'Series \u00b7 S' + v.s + ' E' + v.e + ' \u00b7 ' + clock(v.pos) + (v.dur ? ' of ' + clock(v.dur) : '')
           : 'Series \u00b7 watched S' + v.s + ' E' + v.e + ' \u00b7 ' + (it.lastS ? 'up next' : 'more to watch');
-        var bar = el('span', 'mg-bar'); var fill = el('span'); fill.style.width = (v.done ? 0 : v.dur ? Math.min(100, Math.round(100 * v.pos / v.dur)) : 0) + '%'; bar.appendChild(fill);
-        add(li, add(el('span', 'mg-name'), el('span', 'mg-strong', it.kind === 's' ? (v.series || v.title) : v.title), el('span', 'mg-provider', what), bar),
+        var bar = it.kind === 'l' ? null : el('span', 'mg-bar'); if (bar) { var fill = el('span'); fill.style.width = (v.done ? 0 : v.dur ? Math.min(100, Math.round(100 * v.pos / v.dur)) : 0) + '%'; bar.appendChild(fill); }
+        add(li, add(el('span', 'mg-name'), el('span', 'mg-strong', it.kind === 's' ? (v.series || v.title) : it.kind === 'l' ? v.name : v.title), el('span', 'mg-provider', what), bar),
           el('span', 'mg-provider mg-where', (v.tv || 'A TV') + ' \u00b7 ' + when(it.at)),
           it.kind === 'm' ? btn('Mark watched', 'btn btn-ghost btn-sm', async function () {
             var nv = Object.assign({}, v, { done: true, pos: 0, tv: 'the website' });
@@ -992,7 +995,7 @@
             it.r.v = nv; it.r.at = Date.now(); say('Marked watched on every TV.'); drawList(rows);
           }) : null,
           btn('Remove', 'btn btn-ghost btn-sm', async function () {
-            if (it.kind === 'm') {
+            if (it.kind === 'm' || it.kind === 'l') {
               var x = await post('/api/account/history/put', { profileId: q.id, item: it.r.item, blob: null });
               if (!x._ok) return say(x.error || 'Couldn\u2019t remove it.', true);
               rows.splice(rows.indexOf(it.r), 1);
@@ -1029,7 +1032,7 @@
         if (!x._ok) return say(x.error || 'Couldn’t change it.', true);
         q.historyOff = !onNow; say(onNow ? 'On: ' + q.name + '’s place follows to every TV.' : 'Off for ' + q.name + '.'); route();
       }),
-      el('p', 'fineprint', 'Off: each TV keeps its own place, and what the account has for ' + q.name + ' is deleted. Pause history on a TV stops that TV from sending. Live TV channels are never sent. Neither the website nor its admins can read any of it.'),
+      el('p', 'fineprint', 'Off: each TV keeps its own place, and what the account has for ' + q.name + ' is deleted. Pause history on a TV stops that TV from sending. Of live TV, only the last channel is shared (until its program ends), never a list of channels. Neither the website nor its admins can read any of it.'),
       btn('Clear ' + q.name + '’s history', 'btn btn-ghost', async function () {
         if (!confirm('Delete everything your account holds for ' + q.name + '? Each TV keeps what it has itself.')) return;
         var x = await post('/api/account/profiles/history', { profileId: q.id, off: q.historyOff, clear: true });
