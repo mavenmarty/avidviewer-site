@@ -20,7 +20,7 @@
     var o = await post('/api/passkeys/login/options');
     if (!o._ok) { say(msg, o.error || 'Something went wrong.', true); return; }
     var resp;
-    try { resp = await WA.startAuthentication({ optionsJSON: o.options }); } catch (e) { say(msg, 'Passkey sign-in was cancelled.', true); return; }
+    try { resp = await WA.startAuthentication({ optionsJSON: o.options }); } catch (e) { say(msg, 'No passkey was used. If your browser said there\'s no passkey on this device, sign in with the email link above, then add one on your Account page (Passkeys › Add a passkey).', true); return; }
     var v = await post('/api/passkeys/login/verify', { challengeId: o.challengeId, response: resp });
     if (!v._ok) { say(msg, v.error || "That didn't work.", true); return; }
     location.href = next || '/playlists/';

@@ -340,6 +340,7 @@ export async function manage(env, user) {
       visibility: Object.fromEntries(vis.results.filter((v) => v.profile_id === p.id).map((v) => [v.playlist_id, JSON.parse(v.data)])),
     })),
     vault: keys.results.map((k) => ({ credentialId: k.credential_id, wrapped: k.wrapped })),
+    passkeys: (await env.DB.prepare('SELECT COUNT(*) AS n FROM passkeys WHERE user_id = ?1').bind(uid).first())?.n || 0,
     accountKey: akey ? { pubkey: akey.pubkey, wrapped: akey.wrapped } : null,
     devicePlaylists: dpl.results.map((x) => ({
       deviceId: x.device_id, localId: x.local_id, name: x.name, type: x.type, enabled: Boolean(x.enabled), live: Boolean(x.live), vod: Boolean(x.vod),

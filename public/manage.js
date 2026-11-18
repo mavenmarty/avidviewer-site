@@ -103,14 +103,31 @@
   function VaultError(code) { var e = new Error(code); e.code = code; return e; }
   var VAULT_TEXT = {
     nopasskey: 'Keeping logins in your account needs a passkey. Add one on your Account page (Passkeys), then try again.',
-    cancelled: 'The passkey was cancelled, so the login wasn\'t unlocked.',
+    cancelled: 'The passkey was cancelled, so the login wasn\'t unlocked. If your browser said there\'s no passkey on this device, use the device where you made it, or add one here: Account › Passkeys › Add a passkey.',
     noprf: 'This passkey can\'t keep logins locked (your browser or password manager doesn\'t support it yet). Try another browser, or type the login again when you add a device.',
     other: 'Your logins are locked with a different passkey. Choose the passkey you used when you first saved a playlist.',
   };
+  /** Makes the account's first passkey (Nov 17: an account without one only got the browser's "no passkey on this
+   * device", since this page used to only ask for an existing passkey). */
+  async function createPasskey() {
+    var WA = window.SimpleWebAuthnBrowser;
+    if (!WA || !WA.browserSupportsWebAuthn()) throw VaultError('nopasskey');
+    say('Create your passkey: follow your browser (Face ID, fingerprint or your device PIN).');
+    var o = await post('/api/passkeys/register/options', {});
+    if (!o._ok) throw new Error(o.error || 'The passkey couldn\'t be started.');
+    var resp;
+    try { resp = await WA.startRegistration({ optionsJSON: o.options }); }
+    catch (e) { throw VaultError(e && e.name === 'InvalidStateError' ? 'other' : 'cancelled'); }
+    var v = await post('/api/passkeys/register/verify', { challengeId: o.challengeId, response: resp });
+    if (!v._ok) throw new Error(v.error || 'The passkey couldn\'t be saved.');
+    S.passkeys = (S.passkeys || 0) + 1;
+    say('Passkey created. Now confirm it once more to lock your logins with it.');
+  }
   /** Unlocks the vault with a passkey (made the first time). */
   async function unlock() {
     if (V) return V;
     if (!window.PublicKeyCredential || !navigator.credentials) throw VaultError('nopasskey');
+    if (!S.passkeys) await createPasskey();
     var salt = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode('avidviewer-vault-prf:v1')));
     var cred;
     try {
@@ -253,6 +270,7 @@
     if (!S.vault.length || !S.accountKey) {
       add(b, el('h3', null, 'Keep your logins in your account'),
         el('p', null, 'Set this up once with your passkey. Then your devices send the logins they have (locked so only your browser can open them), new devices get logins without typing, and Edit can show a saved login. The website itself can never read them.'),
+        !S.passkeys ? el('p', 'fineprint', 'You don\'t have a passkey yet. Set up with passkey creates one first (Face ID, fingerprint or your device PIN), then asks you to confirm it once more.') : null,
         unlockBtn(S.vault.length ? 'Unlock with passkey' : 'Set up with passkey'));
     } else if (importable.length || kept.length) {
       var lines = [];

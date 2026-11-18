@@ -226,6 +226,8 @@ async function passkeyRegisterOptions(env, url, user) {
     attestationType: 'none',
     excludeCredentials: existing.results.map((p) => ({ id: p.id, transports: p.transports ? JSON.parse(p.transports) : undefined })),
     authenticatorSelection: { residentKey: 'required', userVerification: 'preferred' },
+    // PRF: lets this passkey unlock the logins vault (Playlists › Set up with passkey).
+    extensions: { prf: {} },
   });
   return json({ challengeId: await saveChallenge(env, options.challenge, 'register', user.id), options });
 }
