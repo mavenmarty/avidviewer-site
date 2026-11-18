@@ -437,3 +437,5 @@ button.btn-ghost { background: transparent; color: var(--text); }
 .pc-row.no .pc-mark { color: #F06B6B; }
 .pc-row.na .pc-mark { color: var(--soft); }
 @media (max-width: 640px) { .pc-row { grid-template-columns: 24px 1fr; } .pc-row .soft { grid-column: 2; } }
+.mg-sortseg { display: flex; gap: 8px; align-items: center; font-size: 14px; color: var(--soft); flex-wrap: wrap; margin-bottom: 4px; }
+.mg-sortseg .btn.on { border-color: var(--accent); color: var(--text); background: var(--surface-2, transparent); }

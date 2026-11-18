@@ -1213,6 +1213,18 @@
     };
   }
   async function getJson(path) { return fetch(path, { credentials: 'same-origin' }).then(function (r) { return r.json(); }); }
+  // 1.18.0 sorting: A–Z by the name as shown (renames count), case ignored — the same order the TV uses.
+  function byName(a, b) { var x = a.toLowerCase(), y = b.toLowerCase(); return x < y ? -1 : x > y ? 1 : (a < b ? -1 : a > b ? 1 : 0); }
+  var SORT_LABEL = { provider: 'Provider’s order', az: 'A–Z', manual: 'Manual' };
+  function sortSeg(label, modes, current, pick) {
+    var g = el('div', 'mg-sortseg'); g.setAttribute('role', 'group'); g.setAttribute('aria-label', label);
+    g.appendChild(el('span', null, label + ':'));
+    modes.forEach(function (m) {
+      var t = btn(SORT_LABEL[m], 'btn btn-ghost btn-sm' + (m === current ? ' on' : ''), function () { if (m !== current) pick(m); });
+      t.setAttribute('aria-pressed', String(m === current)); g.appendChild(t);
+    });
+    return g;
+  }
   function effectiveOrder(all, order) { var seen = {}; var out = []; (order || []).forEach(function (x) { if (all.indexOf(x) >= 0 && !seen[x]) { seen[x] = 1; out.push(x); } }); all.forEach(function (x) { if (!seen[x]) out.push(x); }); return out; }
 
   // ---- a playlist's order and names
@@ -1236,6 +1248,17 @@
     var foot = el('div', 'mg-order-foot'); b.appendChild(foot);
     var allRaw = groups.map(function (g) { return g.n; });
     function change(mut) { sv.push(D); D = JSON.parse(JSON.stringify(D)); mut(D); sv.save(D); draw(); }
+    // How this playlist's channels are sorted: the setting, else Manual when it has an order of its own, else the provider's.
+    function sortOf(d) { return d.channelSort || (Object.keys(d.channelOrder || {}).some(function (k) { return (d.channelOrder[k] || []).length; }) ? 'manual' : 'provider'); }
+    function shownChans(d, g) {
+      var all = g.ch.map(function (c) { return c[0]; }), names = {}; g.ch.forEach(function (c) { names[c[0]] = d.channelNames[c[0]] || c[1]; });
+      var m = sortOf(d);
+      if (m === 'az') return all.slice().sort(function (a, b2) { return byName(names[a], names[b2]); });
+      if (m === 'provider') return all;
+      return effectiveOrder(all, d.channelOrder[g.n]);
+    }
+    // Manual starts from the order shown now, in every category.
+    function toManual(d) { if (sortOf(d) === 'manual') return; groups.forEach(function (g) { d.channelOrder[g.n] = shownChans(d, g); }); d.channelSort = 'manual'; }
     function draw() {
       wrap.innerHTML = '';
       // Categories
@@ -1270,17 +1293,17 @@
       var g = groups.find(function (x) { return x.n === selected; }) || { ch: [] };
       var allCh = g.ch.map(function (c) { return c[0]; });
       var nameOf = {}; g.ch.forEach(function (c) { nameOf[c[0]] = c[1]; });
-      var corder = effectiveOrder(allCh, D.channelOrder[selected]);
+      var mode = sortOf(D);
+      var corder = shownChans(D, g);
       var right = el('section', 'mg-card mg-order-chans');
       var find = el('input'); find.type = 'search'; find.placeholder = 'Find a channel'; find.value = filter; find.setAttribute('aria-label', 'Find a channel');
       find.addEventListener('input', function () { filter = find.value; drawChans(); find.focus(); });
       add(right, add(el('div', 'mg-row-head'), el('h2', null, (D.groupNames[selected] || selected) + ' · ' + corder.length + ' channels'), find));
-      add(right, add(el('div', 'mg-arrange'), el('span', null, 'Arrange:'),
-        btn('A–Z', 'linkish', function () { change(function (d) { d.channelOrder[selected] = corder.slice().sort(function (a, b2) { return (d.channelNames[a] || nameOf[a] || '').localeCompare(d.channelNames[b2] || nameOf[b2] || ''); }); }); }),
-        btn('Provider’s order', 'linkish', function () { change(function (d) { delete d.channelOrder[selected]; }); })));
+      add(right, sortSeg('Sort channels', ['provider', 'az', 'manual'], mode, function (m) { change(function (d) { if (m === 'manual') toManual(d); else d.channelSort = m; }); }),
+        el('p', 'fineprint', 'For every category of ' + p.name + ', on every profile and device. A–Z uses the names as shown, renames included. Dragging a channel switches to Manual, starting from the order shown.'));
       var cul = el('ul', 'mg-rows'); right.appendChild(cul);
       var note = el('p', 'fineprint'); right.appendChild(note);
-      function moveCh(from, to) { change(function (d) { d.channelOrder[selected] = moved(corder, from, to); }); }
+      function moveCh(from, to) { change(function (d) { toManual(d); d.channelOrder[selected] = moved(corder, from, to); }); }
       function drawChans() {
         cul.innerHTML = '';
         var q = filter.trim().toLowerCase();
@@ -1300,7 +1323,7 @@
           cul.appendChild(li);
         });
         if (!q) sortable(cul, 'chans:' + selected, moveCh);
-        note.textContent = (list.length > cap ? 'Showing the first ' + cap + ' of ' + list.length + '; use Find, ⤒ / ⤓ or A–Z for the rest. ' : '') +
+        note.textContent = (list.length > cap ? 'Showing the first ' + cap + ' of ' + list.length + '; use Find or ⤒ / ⤓ for the rest. ' : '') +
           (q ? 'Clear Find to drag. ' : '') + 'Drag by ⋮⋮ (the page scrolls at the edges), ⤒ / ⤓ for the top or bottom, ▲ ▼ for one step. Keyboard: Tab to ⋮⋮, Space, ↑ ↓, Space. A renamed channel shows the provider’s name underneath.';
       }
       drawChans();
@@ -1309,7 +1332,7 @@
       add(foot, status, btn('Undo last change', 'btn btn-ghost', function () { var u = sv.undo(); if (u) { D = u; sv.save(D); draw(); } }),
         btn('Reset all to the provider’s order and names', 'btn btn-danger', function () {
           if (!confirm('Put every category and channel of ' + p.name + ' back in the provider’s order, with the provider’s names, on every device?')) return;
-          change(function (d) { d.groupOrder = []; d.groupNames = {}; d.channelOrder = {}; d.channelNames = {}; });
+          change(function (d) { d.groupOrder = []; d.groupNames = {}; d.channelOrder = {}; d.channelNames = {}; d.channelSort = 'provider'; });
         }));
     }
     draw();
@@ -1347,7 +1370,19 @@
     var foot = el('div', 'mg-order-foot'); b.appendChild(foot);
     if (!mine.length) { wrap.appendChild(el('p', 'soft', 'Give ' + q.name + ' a playlist first (Overview), then add channels to its lists.')); return; }
     function change(mut) { sv.push(D); D = JSON.parse(JSON.stringify(D)); mut(D); sv.save(D); draw(); }
-    function keysOf(d) { return current === 'fav' ? d.favorites : (d.lists.find(function (l) { return l.id === current; }) || { keys: [] }).keys; }
+    function storedKeys(d) { return current === 'fav' ? d.favorites : (d.lists.find(function (l) { return l.id === current; }) || { keys: [] }).keys; }
+    function listSort(d) { return (current === 'fav' ? d.favSort : (d.lists.find(function (l) { return l.id === current; }) || {}).sort) === 'az' ? 'az' : 'manual'; }
+    // As the TV shows it: A–Z mixes every playlist by name; channels not found keep their place at the end.
+    function keysOf(d) {
+      var k = storedKeys(d); if (listSort(d) !== 'az') return k;
+      var found = k.filter(function (x) { return CH[x]; }).sort(function (a, b2) { return byName(CH[a].name, CH[b2].name); });
+      return found.concat(k.filter(function (x) { return !CH[x]; }));
+    }
+    function setSort(d, m) {
+      var shown = keysOf(d);
+      if (current === 'fav') d.favSort = m; else d.lists.forEach(function (l) { if (l.id === current) l.sort = m; });
+      if (m === 'manual') setKeys(d, shown);
+    }
     function setKeys(d, keys) { if (current === 'fav') d.favorites = keys; else d.lists = d.lists.map(function (l) { return l.id === current ? Object.assign({}, l, { keys: keys }) : l; }); }
     function draw() {
       wrap.innerHTML = '';
@@ -1380,10 +1415,10 @@
       add(right, add(el('div', 'mg-row-head'), el('h2', null, title + ' · ' + keys.length + (keys.length === 1 ? ' channel' : ' channels')),
         btn(adding ? 'Done adding' : '＋ Add channels', adding ? 'btn btn-ghost' : 'btn btn-primary', function () { adding = !adding; draw(); })));
       if (adding) right.appendChild(addPanel(keys));
-      add(right, add(el('div', 'mg-arrange'), el('span', null, 'Arrange:'),
-        btn('A–Z', 'linkish', function () { change(function (d) { setKeys(d, keysOf(d).slice().sort(function (a, b2) { return ((CH[a] || {}).name || a).localeCompare((CH[b2] || {}).name || b2); })); }); })));
+      add(right, sortSeg('Sort', ['az', 'manual'], listSort(D), function (m) { change(function (d) { setSort(d, m); }); }),
+        el('p', 'fineprint', 'A–Z mixes channels from every playlist by name. Dragging switches to Manual, starting from the order shown.'));
       var ul = el('ul', 'mg-rows');
-      function moveCh(from, to) { change(function (d) { setKeys(d, moved(keysOf(d), from, to)); }); }
+      function moveCh(from, to) { change(function (d) { if (listSort(d) !== 'manual') setSort(d, 'manual'); setKeys(d, moved(keysOf(d), from, to)); }); }
       if (!keys.length) ul.appendChild(el('li', 'soft', 'No channels yet. Choose Add channels.'));
       keys.forEach(function (k, i) {
         var c = CH[k], li = el('li'); li.dataset.i = i;
@@ -1404,7 +1439,7 @@
             say('Renamed in ' + c.playlist + ': every profile and device shows the new name.'); draw();
           });
         }));
-        var rm = btn('✕', 'mg-mv mg-rm', function () { change(function (d) { setKeys(d, keysOf(d).filter(function (x) { return x !== k; })); }); });
+        var rm = btn('✕', 'mg-mv mg-rm', function () { change(function (d) { setKeys(d, storedKeys(d).filter(function (x) { return x !== k; })); }); });
         rm.title = 'Remove from ' + title; rm.setAttribute('aria-label', 'Remove ' + (c ? c.name : 'this channel') + ' from ' + title);
         add(li, handle(c ? c.name : 'channel'), el('span', 'mg-pos', String(i + 1)), nameSlot);
         acts.forEach(function (a) { li.appendChild(a); });
@@ -1480,7 +1515,7 @@
           btn('Add ' + (n || '') + (n === 1 ? ' channel' : ' channels'), 'btn btn-primary', function () {
             if (!n) return;
             var add2 = Object.keys(picked); picked = {};
-            change(function (d) { setKeys(d, keysOf(d).concat(add2.filter(function (k) { return keysOf(d).indexOf(k) < 0; }))); });
+            change(function (d) { setKeys(d, storedKeys(d).concat(add2.filter(function (k) { return storedKeys(d).indexOf(k) < 0; }))); });
             say('Added ' + add2.length + (add2.length === 1 ? ' channel.' : ' channels.'));
           }));
         footer.lastChild.disabled = !n;
