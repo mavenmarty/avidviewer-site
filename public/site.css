@@ -424,3 +424,16 @@ button.btn-ghost { background: transparent; color: var(--text); }
 .mg-addhead { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; position: sticky; top: 0; background: var(--card, #fff); padding: 4px 0; z-index: 1; }
 .mg-addhead .fineprint { margin: 0; }
 .mg-whose { font-weight: 600; margin: 4px 0 8px; }
+
+/* Web player check */
+.pc-facts { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; color: var(--soft); }
+.pc-results { display: flex; flex-direction: column; gap: 16px; }
+.pc-stage { display: flex; flex-direction: column; gap: 6px; }
+.pc-stage video { width: 100%; max-width: 480px; aspect-ratio: 16 / 9; background: #000; border-radius: 12px; }
+.pc-rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.pc-row { display: grid; grid-template-columns: 24px 220px 1fr; gap: 10px; align-items: baseline; }
+.pc-row .pc-mark { font-weight: 700; text-align: center; }
+.pc-row.ok .pc-mark { color: #3FB68B; }
+.pc-row.no .pc-mark { color: #F06B6B; }
+.pc-row.na .pc-mark { color: var(--soft); }
+@media (max-width: 640px) { .pc-row { grid-template-columns: 24px 1fr; } .pc-row .soft { grid-column: 2; } }

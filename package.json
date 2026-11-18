@@ -19,6 +19,7 @@
   "homepage": "https://github.com/mavenmarty/avidviewer-site#readme",
   "devDependencies": {
     "@simplewebauthn/browser": "^14.0.0",
+    "hls.js": "^1.7.4",
     "marked": "^18.2.0",
     "wrangler": "^4.162.0"
   },
