@@ -20,6 +20,7 @@ import { playlistsSave, playlistsSeal, playlistsRemove, playlistVault } from './
 import { attention, attentionDismiss, playlistsRetry } from './attention.js';
 import { listsGet, listsSave, orderGet, orderSave } from './lists.js';
 import { historyGet, historyPut, historyKeySave, historyDevices, historySeal, profileHistory, clearAllHistory, discoverSave, tmdbSave } from './history.js';
+import { deviceBeta } from './beta.js';
 import { manage, catalogFor, profileSave, profileRemove, profilePin, profileVisibility, deviceSetProfiles, deviceStop, vaultKey, accountKeySave, deviceLogins, playlistsImport, playlistsAdopt } from './profiles.js';
 import {
   generateRegistrationOptions, verifyRegistrationResponse,
@@ -436,6 +437,7 @@ export async function handleAccountApi(request, env, realUrl) {
     case '/api/account/delete': return deleteAccount(request, env, user);
     case '/api/account/devices/rename': return deviceRename(request, env, user);
     case '/api/account/devices/remove': return deviceRemove(request, env, user);
+    case '/api/account/devices/beta': return deviceBeta(request, env, user);
     case '/api/account/backups/delete': return backupDelete(request, env, user);
     case '/api/account/backups/pin': return backupPin(request, env, user);
     case '/api/link/lookup': return linkLookup(request, env);

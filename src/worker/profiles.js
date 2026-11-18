@@ -298,7 +298,7 @@ export async function manage(env, user) {
   ]);
   const now = Date.now();
   const [devs, pls, ts, profs, pp, dp, vis, cats, keys] = await Promise.all([
-    env.DB.prepare(`SELECT id, name, model, app_version, pubkey, profiles, managed_at, last_seen, playing, playing_at, stop_at FROM devices
+    env.DB.prepare(`SELECT id, name, model, app_version, pubkey, profiles, managed_at, last_seen, playing, playing_at, stop_at, beta_offer, beta_at FROM devices
       WHERE user_id = ?1 AND revoked_at IS NULL ORDER BY created_at`).bind(uid).all(),
     env.DB.prepare('SELECT id, name, type, updated_at, removing, (vault IS NOT NULL) AS kept FROM account_playlists WHERE user_id = ?1 ORDER BY name').bind(uid).all(),
     env.DB.prepare('SELECT playlist_id, device_id, profiles, action, status, error, updated_at FROM playlist_targets WHERE user_id = ?1').bind(uid).all(),
@@ -323,6 +323,7 @@ export async function manage(env, user) {
       lastSeen: d.last_seen, ownProfiles: d.profiles ? JSON.parse(d.profiles) : [],
       profiles: dp.results.filter((x) => x.device_id === d.id).map((x) => x.profile_id),
       playing: d.playing && d.playing_at > now - PLAYING_FRESH ? { ...JSON.parse(d.playing), stopping: Boolean(d.stop_at) } : null,
+      betaOffer: Boolean(d.beta_offer), inBeta: Boolean(d.beta_at),
     })),
     playlists: pls.results.map((p) => ({
       id: p.id, name: p.name, type: p.type, updatedAt: p.updated_at, removing: Boolean(p.removing), kept: Boolean(p.kept),

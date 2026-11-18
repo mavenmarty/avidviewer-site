@@ -1577,9 +1577,28 @@
         });
         c.appendChild(row);
       }
+      c.appendChild(betaBlock(d));
       b.appendChild(c);
     });
     b.appendChild(el('p', 'fineprint', 'A device with one profile (or none) shows no profiles at all. Taking a profile off a device removes that profile\'s playlists from it, unless another profile on the device has them.'));
+  }
+
+  /** Beta channel (Nov 18, 2026): the owner offers a device; we choose some offered devices to get new versions early. */
+  function betaBlock(d) {
+    var box = el('div', 'mg-beta');
+    add(box, el('h4', null, 'Beta versions'));
+    add(box, check('Offer this device beta builds', d.betaOffer, async function (v) {
+      if (!v && d.inBeta && !confirm('Leave the beta on ' + d.name + '? It keeps its beta version until a public version catches up, then updates as usual.')) return load();
+      var r = await post('/api/account/devices/beta', { deviceId: d.id, offer: v });
+      if (!r._ok) { say(r.error, true); return load(); }
+      say(v ? 'Offered. If ' + d.name + ' is chosen, you\'ll get an email and it shows Beta in Settings › Updates & about.' : d.name + ' gets public versions only.');
+      load();
+    }));
+    var status = d.inBeta ? 'In the beta: it gets new versions before everyone else.'
+      : d.betaOffer ? 'Offered · waiting to be chosen.' : 'Public versions.';
+    add(box, add(el('p', 'soft'), d.inBeta ? el('span', 'mg-chip', 'Beta') : null, document.createTextNode(' ' + status)));
+    add(box, el('p', 'fineprint', 'Beta versions can have rough edges. Crash reports and playback logs from them are marked beta. Nothing about what you watch is shared.'));
+    return box;
   }
 
   document.querySelectorAll('.mg-signout').forEach(function (b) {

@@ -9,6 +9,7 @@
 
 import { json, body, randomToken, sendSignInLink } from './auth.js';
 import { backupsFor } from './devices.js';
+import { adminBeta, adminBetaChoose, adminBetaOffer } from './beta.js';
 
 const DAY = 24 * 3600 * 1000;
 
@@ -223,6 +224,7 @@ export async function handleAdminApi(request, env, url, user) {
       case '/api/admin/user': return userDetail(env, url);
       case '/api/admin/audit': return auditLog(env);
       case '/api/admin/launch-news': return launchNews(env, url);
+      case '/api/admin/beta': return adminBeta(env);
     }
     return json({ error: 'Not found.' }, 404);
   }
@@ -233,6 +235,8 @@ export async function handleAdminApi(request, env, url, user) {
     case '/api/admin/end-sessions': return endSessions(request, env, user);
     case '/api/admin/resend-link': return resendLink(request, env, url, user);
     case '/api/admin/delete': return deleteUser(request, env, user);
+    case '/api/admin/beta/choose': return adminBetaChoose(request, env, user, audit, url);
+    case '/api/admin/beta/offer': return adminBetaOffer(request, env, user, audit);
   }
   return json({ error: 'Not found.' }, 404);
 }

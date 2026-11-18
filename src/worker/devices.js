@@ -19,6 +19,7 @@ import { handleProfileTvApi } from './profiles.js';
 import { handleListsTvApi } from './lists.js';
 import { handleHistoryTvApi } from './history.js';
 import { json, randomToken, sha256hex, ipOf, body } from './auth.js';
+import { betaFor } from './beta.js';
 
 const ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // same as setup codes: no 0/O, 1/I/L
 const TV_CODE_TTL = 10 * 60 * 1000;
@@ -133,7 +134,7 @@ async function tvMe(request, env) {
   const version = clip(request.headers.get('x-app-version') || '', 30);
   await env.DB.prepare('UPDATE devices SET last_seen = ?1, app_version = COALESCE(NULLIF(?2, \'\'), app_version) WHERE id = ?3')
     .bind(Date.now(), version, d.id).run();
-  return json({ email: d.email, name: d.name, deviceId: d.id });
+  return json({ email: d.email, name: d.name, deviceId: d.id, beta: await betaFor(env, d.id) });
 }
 
 // ---------------------------------------------------------------- cloud backups (TV side)

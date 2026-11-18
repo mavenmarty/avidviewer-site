@@ -17,6 +17,7 @@
       <button type="button" role="tab" data-tab="people">People</button>
       <button type="button" role="tab" data-tab="audit">Audit log</button>
       <button type="button" role="tab" data-tab="news">Launch news</button>
+      <button type="button" role="tab" data-tab="beta">Beta</button>
     </nav>
 
     <section data-panel="dash">
@@ -40,6 +41,20 @@
 
     <section data-panel="audit" hidden>
       <div class="setup-card"><table class="adm-table" id="adm-audit"></table></div>
+    </section>
+
+    <section data-panel="beta" hidden>
+      <div class="setup-card">
+        <h2>Beta build</h2>
+        <p id="adm-beta-offered" class="soft">Loading…</p>
+        <div class="adm-search"><select id="adm-beta-build"></select><button class="btn btn-primary" type="button" id="adm-beta-offer">Offer to the beta devices</button></div>
+        <p class="fineprint">Beta builds are GitHub pre-releases made by "Publish to beta". Public devices never see them. Chosen devices get the offered build; a device that leaves keeps it until a public version is newer.</p>
+      </div>
+      <div class="setup-card">
+        <h2>Offered devices</h2>
+        <p class="fineprint" id="adm-beta-mail"></p>
+        <table class="adm-table" id="adm-beta-devices"></table>
+      </div>
     </section>
 
     <section data-panel="news" hidden>

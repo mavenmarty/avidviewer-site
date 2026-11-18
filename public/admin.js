@@ -19,7 +19,7 @@
     if (!rows.length) { var e = el('tr'); var td = el('td', 'soft', 'Nothing yet.'); td.colSpan = head.length; e.appendChild(td); t.appendChild(e); }
     rows.forEach(function (r) { var row = el('tr'); r.cells.forEach(function (c) { row.appendChild(el('td', null, c)); }); if (r.onclick) { row.tabIndex = 0; row.addEventListener('click', r.onclick); row.addEventListener('keydown', function (e) { if (e.key === 'Enter') r.onclick(); }); } t.appendChild(row); });
   }
-  var ACTIONS = { suspend: 'Suspended', unsuspend: 'Lifted suspension', 'delete': 'Deleted account', revoke_tv: 'Signed out device', resend_link: 'Sent sign-in link', end_sessions: 'Signed out browsers', note: 'Added note' };
+  var ACTIONS = { suspend: 'Suspended', unsuspend: 'Lifted suspension', 'delete': 'Deleted account', revoke_tv: 'Signed out device', resend_link: 'Sent sign-in link', end_sessions: 'Signed out browsers', note: 'Added note', beta_choose: 'Chose for the beta', beta_remove: 'Took out of the beta', beta_offer: 'Offered beta build' };
 
   // ---------------------------------------------------------------- gate
   function start() {
@@ -49,7 +49,7 @@
   function tab(name) {
     document.querySelectorAll('[role=tab]').forEach(function (b) { b.setAttribute('aria-selected', String(b.dataset.tab === name)); });
     document.querySelectorAll('[data-panel]').forEach(function (p) { p.hidden = p.dataset.panel !== name; });
-    ({ dash: loadStats, people: loadUsers, audit: loadAudit, news: loadNews })[name]();
+    ({ dash: loadStats, people: loadUsers, audit: loadAudit, news: loadNews, beta: loadBeta })[name]();
   }
   document.querySelectorAll('[role=tab]').forEach(function (b) { b.addEventListener('click', function () { tab(b.dataset.tab); }); });
 
@@ -163,6 +163,42 @@
       }));
     });
   }
+  // ---------------------------------------------------------------- beta channel
+  function loadBeta() {
+    get('/api/admin/beta').then(function (b) {
+      if (!b._ok) { $('adm-beta-offered').textContent = b.error || 'Couldn\'t load the beta.'; return; }
+      $('adm-beta-offered').textContent = b.offered ? 'Offered now: ' + b.offered.name + ' (since ' + when(b.offered.at) + ', by ' + b.offered.by + ')' : 'No beta build offered yet.';
+      var sel = $('adm-beta-build'); sel.innerHTML = '';
+      b.builds.forEach(function (x) { var o = el('option', null, x.name + ' · ' + when(x.publishedAt)); o.value = x.tag; if (b.offered && b.offered.tag === x.tag) o.selected = true; sel.appendChild(o); });
+      if (!b.builds.length) { var o = el('option', null, b.buildsError || 'No beta builds yet'); o.value = ''; sel.appendChild(o); }
+      $('adm-beta-offer').disabled = !b.builds.length;
+      $('adm-beta-mail').textContent = b.mail ? 'Choosing a device emails its owner.' : 'Email isn\'t set up, so owners see it only on the website and TV.';
+      var t = $('adm-beta-devices'); t.innerHTML = '';
+      var tr = el('tr'); ['Beta', 'Device', 'Model', 'App version', 'Last check-in', 'Account'].forEach(function (h) { tr.appendChild(el('th', null, h)); }); t.appendChild(tr);
+      if (!b.devices.length) { var e = el('tr'); var td = el('td', 'soft', 'No devices offered yet.'); td.colSpan = 6; e.appendChild(td); t.appendChild(e); }
+      b.devices.forEach(function (d) {
+        var row = el('tr'); var c = el('td'); var box = el('input'); box.type = 'checkbox'; box.checked = !!d.chosenAt;
+        box.setAttribute('aria-label', 'Beta for ' + d.name);
+        box.addEventListener('change', function () {
+          box.disabled = true;
+          post('/api/admin/beta/choose', { deviceId: d.id, on: box.checked }).then(function (r) {
+            if (!r._ok) alert(r.error || 'That didn\'t work.');
+            loadBeta();
+          });
+        });
+        c.appendChild(box); row.appendChild(c);
+        [d.name, d.model || '—', d.appVersion || '—', when(d.lastSeen), d.email].forEach(function (v) { row.appendChild(el('td', null, v)); });
+        t.appendChild(row);
+      });
+    });
+  }
+  $('adm-beta-offer').addEventListener('click', function () {
+    var tag = $('adm-beta-build').value; if (!tag) return;
+    var name = $('adm-beta-build').selectedOptions[0].textContent.split(' · ')[0];
+    if (!confirm('Offer ' + name + ' to every device in the beta?')) return;
+    post('/api/admin/beta/offer', { tag: tag }).then(function (r) { if (!r._ok) alert(r.error || 'That didn\'t work.'); loadBeta(); });
+  });
+
   function loadNews() {
     get('/api/admin/launch-news').then(function (d) {
       table($('adm-news'), ['Email', 'Signed up', 'Source', 'Country'], (d.signups || []).map(function (s) { return { cells: [s.email, when(s.at), s.source || '', s.country || ''] }; }));
