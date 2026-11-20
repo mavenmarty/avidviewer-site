@@ -68,18 +68,19 @@
   var lf = document.getElementById('link-form');
   if (lf) {
     var codeIn = document.getElementById('link-code'), lmsg = document.getElementById('link-msg');
-    var found = null;
+    var found = null, me = null;
     var pre = (location.search.match(/[?&]c=([A-Za-z0-9-]+)/) || [])[1] || '';
     fetch('/api/me', { credentials: 'same-origin' }).then(function (r) {
       if (r.status === 401) { location.href = '/signin/?next=' + encodeURIComponent('/link/' + (pre ? '?c=' + pre : '')); return; }
-      return r.json().then(function (me) {
+      return r.json().then(function (m) {
+        me = m;
         document.getElementById('link-who').textContent = 'The device will be added to ' + me.email + '.';
         lf.hidden = false;
         if (pre) { codeIn.value = pretty(pre); document.getElementById('link-intro').textContent = 'The code from your device\'s QR code is filled in. Check the device below and choose Add this device.'; lookup(); } else codeIn.focus();
       });
     });
     function pretty(v) { var c = String(v).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8); return c.length > 4 ? c.slice(0, 4) + '-' + c.slice(4) : c; }
-    function reset() { found = null; document.getElementById('link-found').hidden = true; document.getElementById('link-go').textContent = 'Find my device'; }
+    function reset() { found = null; fullBox.hidden = true; document.getElementById('link-go').disabled = false; document.getElementById('link-found').hidden = true; document.getElementById('link-go').textContent = 'Find my device'; }
     codeIn.addEventListener('input', function () { var v = pretty(codeIn.value); if (v !== codeIn.value) codeIn.value = v; reset(); if (v.length === 9) lookup(); });
     function lookup() {
       say(lmsg, 'Looking for the device…');
@@ -91,12 +92,46 @@
         document.getElementById('link-found').hidden = false;
         document.getElementById('link-go').textContent = 'Add this device';
         document.getElementById('link-name').focus();
+        if (me && me.devices.length >= (me.deviceLimit || 4)) showFull(me.devices, me.deviceLimit || 4);
       });
+    }
+    // Nov 20, 2026: at most 4 devices. A full account picks one to remove right here, then adds this one.
+    var fullBox = document.getElementById('link-full');
+    function showFull(devices, limit) {
+      fullBox.innerHTML = ''; fullBox.hidden = false;
+      fullBox.appendChild(el('p', 'mg-warn', 'Your account already has ' + limit + ' devices, the most it can have. Remove one you no longer use to add this one. The code on your device keeps working while you choose.'));
+      var ul = el('ul', 'rows');
+      devices.slice().sort(function (a, b) { return (a.lastSeen || 0) - (b.lastSeen || 0); }).forEach(function (d) {
+        var li = el('li');
+        var away = d.lastSeen && Date.now() - d.lastSeen > 7 * 86400000;
+        var info = el('div', 'lf-info');
+        info.appendChild(el('strong', null, d.name + (away ? ' · not used lately' : '')));
+        info.appendChild(el('span', 'soft', [d.model, d.appVersion ? 'Avid Viewer ' + d.appVersion : '', 'last seen ' + when(d.lastSeen)].filter(Boolean).join(' · ')));
+        li.appendChild(info);
+        var rm = el('button', 'btn btn-ghost btn-sm', 'Remove'); rm.type = 'button';
+        rm.addEventListener('click', function () {
+          if (!confirm('Remove "' + d.name + '" from your account? It\'s signed out the next time it checks in and asks to be linked again. Its backup stays in your account for 30 days.')) return;
+          rm.disabled = true;
+          post('/api/account/devices/remove', { id: d.id }).then(function (x) {
+            if (!x._ok) { rm.disabled = false; say(lmsg, x.error || "That didn't work.", true); return; }
+            if (me) me.devices = me.devices.filter(function (y) { return y.id !== d.id; });
+            fullBox.hidden = true; fullBox.innerHTML = '';
+            say(lmsg, d.name + ' was removed. Choose Add this device to finish.');
+            document.getElementById('link-go').disabled = false;
+          });
+        });
+        li.appendChild(rm); ul.appendChild(li);
+      });
+      fullBox.appendChild(ul);
+      var a = el('a', null, 'Manage all devices'); a.href = '/devices/';
+      var fp = el('p', 'fineprint'); fp.appendChild(a); fullBox.appendChild(fp);
+      document.getElementById('link-go').disabled = true;
     }
     lf.addEventListener('submit', function (e) {
       e.preventDefault();
       if (!found) { lookup(); return; }
       post('/api/link/approve', { code: codeIn.value, name: document.getElementById('link-name').value }).then(function (d) {
+        if (d.code === 'device_limit') { say(lmsg, ''); showFull(d.devices || [], d.limit || 4); return; }
         if (!d._ok) { say(lmsg, d.error || "That didn't work.", true); reset(); return; }
         document.getElementById('link-done-name').textContent = d.name;
         lf.hidden = true; document.getElementById('link-done').hidden = false;

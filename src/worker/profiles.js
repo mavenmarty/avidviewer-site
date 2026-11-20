@@ -20,7 +20,7 @@
 // What's being watched is never sent: Watching now has only the playlist, profile, device and start time.
 
 import { json, body, randomToken, sha256hex } from './auth.js';
-import { deviceFor } from './devices.js';
+import { deviceFor, MAX_DEVICES } from './devices.js';
 import { historySummary } from './history.js';
 
 const clip = (v, n) => (typeof v === 'string' ? v.trim().slice(0, n) : '');
@@ -318,6 +318,7 @@ export async function manage(env, user) {
       json_array_length(data, '$.movie') AS movie, json_array_length(data, '$.series') AS series FROM playlist_catalogs WHERE user_id = ?1`).bind(uid).all(),
   ]);
   return json({
+    deviceLimit: MAX_DEVICES,
     devices: devs.results.map((d) => ({
       id: d.id, name: d.name, model: d.model, appVersion: d.app_version, pubkey: d.pubkey || null, managed: Boolean(d.managed_at),
       lastSeen: d.last_seen, ownProfiles: d.profiles ? JSON.parse(d.profiles) : [],
