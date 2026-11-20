@@ -322,7 +322,15 @@
     }
     if (PAGE === 'devices') return devicesPage();
   }
-  window.addEventListener('hashchange', function () { say(''); route(); });
+  // Unsaved choices (What X can see is the one editor with a Save button): ask before leaving them.
+  var unsaved = null; // () => true while the open editor has changes not saved yet
+  var lastHash = location.hash;
+  function leaveOk() { return !(unsaved && unsaved()) || confirm('You have changes that aren’t saved. Leave without saving them?'); }
+  window.addEventListener('beforeunload', function (e) { if (unsaved && unsaved()) { e.preventDefault(); e.returnValue = ''; } });
+  window.addEventListener('hashchange', function () {
+    if (!leaveOk()) { history.replaceState(null, '', lastHash || location.pathname); return; }
+    unsaved = null; lastHash = location.hash; say(''); route();
+  });
   function go(hash) { if ((location.hash || '#') === hash) route(); else location.hash = hash; }
   function body(title, intro) {
     // A fresh page each time: a tab still loading for the page before (another profile, say) fills that old page,
@@ -784,7 +792,11 @@
     var area = el('div');
     add(vis, add(el('label', 'fld', 'Playlist'), sel), area);
     b.appendChild(vis);
-    sel.addEventListener('change', function () { visEditor(q, sel.value, area); });
+    var shownPl = sel.value;
+    sel.addEventListener('change', function () {
+      if (!leaveOk()) { sel.value = shownPl; return; }
+      shownPl = sel.value; visEditor(q, sel.value, area);
+    });
     visEditor(q, sel.value, area);
   }
 
@@ -804,6 +816,9 @@
     if (mineNow && mineNow._ok !== false && mineNow.profileId === q.id) { if (mineNow.data) q.visibility[plId] = mineNow.data; else delete q.visibility[plId]; }
     var savedAt = mineNow && mineNow.updatedAt;
     var v = JSON.parse(JSON.stringify(q.visibility[plId] || blankVis()));
+    var savedJson = JSON.stringify(v);
+    function dirty() { return JSON.stringify(v) !== savedJson; }
+    unsaved = function () { return area.isConnected && area.dataset.ticket === ticket && dirty(); };
     var plName = (pl(plId) || {}).name || 'this playlist';
     var whose = el('p', 'mg-whose');
     function drawWhose() { whose.textContent = 'Editing ' + q.name + '’s choices for ' + plName + ' · ' + (savedAt ? 'last saved ' + when(savedAt) : 'not saved yet') + '. Other profiles keep their own.'; }
@@ -826,6 +841,7 @@
     }
     function rows(k) { return k === 'live' ? cat.live.map(function (g) { return [g.n, g.c, g]; }) : cat[k].map(function (x) { return [x[0], x[1], null]; }); }
     function draw() {
+      drawBar();
       tabs.innerHTML = '';
       KINDS.forEach(function (x) {
         var t = btn(x[1], 'mg-tab' + (x[0] === kind ? ' on' : ''), function () { kind = x[0]; openCat = null; draw(); }); tabs.appendChild(t);
@@ -858,16 +874,30 @@
       });
       list.appendChild(ul);
     }
-    var sv = btn('Save what ' + q.name + ' can see', 'btn btn-primary', async function () {
-      sv.disabled = true;
+    // Owner, Nov 19: changes here need Save, and people lost them by leaving without scrolling down to it. The Save
+    // button is now at the top as well as the bottom, with a line saying whether anything is waiting to be saved.
+    var saving = false;
+    async function saveVis() {
+      saving = true; drawBar();
       var res = await post('/api/account/profiles/visibility', { profileId: q.id, playlistId: plId, data: v });
-      sv.disabled = false;
-      if (!res._ok) return say(res.error, true);
-      if (res.profileId && res.profileId !== q.id) return say('That was saved for another profile. Reload the page and try again.', true);
-      q.visibility[plId] = JSON.parse(JSON.stringify(v)); savedAt = res.updatedAt || Date.now(); drawWhose();
+      saving = false;
+      if (!res._ok) { drawBar(); return say(res.error, true); }
+      if (res.profileId && res.profileId !== q.id) { drawBar(); return say('That was saved for another profile. Reload the page and try again.', true); }
+      q.visibility[plId] = JSON.parse(JSON.stringify(v)); savedJson = JSON.stringify(v); savedAt = res.updatedAt || Date.now(); drawWhose(); drawBar();
       say('Saved for ' + q.name + ' only. Devices pick it up within a minute.');
-    });
-    add(area, el('p', 'fineprint', q.kids ? 'Kids profile: everything starts hidden. Show the categories it may watch; adult categories can\'t be shown.'
+    }
+    var label = 'Save what ' + q.name + ' can see';
+    var topSv = btn(label, 'btn btn-primary', saveVis), sv = btn(label, 'btn btn-primary', saveVis);
+    var barNote = el('span', 'mg-savenote');
+    var bar = add(el('div', 'mg-savebar'), topSv, barNote);
+    function drawBar() {
+      var d = dirty();
+      topSv.disabled = sv.disabled = saving || !d;
+      topSv.textContent = sv.textContent = saving ? 'Saving…' : label;
+      barNote.textContent = saving ? '' : d ? 'You have changes that aren’t saved yet.' : 'All changes saved.';
+      bar.classList.toggle('dirty', d && !saving);
+    }
+    add(area, bar, el('p', 'fineprint', q.kids ? 'Kids profile: everything starts hidden. Show the categories it may watch; adult categories can\'t be shown.'
       : 'Hidden categories and channels disappear from the guide, search, Favorites and Sports for this profile, on every device it\'s on.'),
       whose, tabs, list, sv, el('p', 'fineprint', 'Names come from the playlist as ' + (cat.device || 'a device') + ' last downloaded it (' + new Date(r.updatedAt).toLocaleString() + ').'));
     draw();
@@ -1416,7 +1446,13 @@
       var right = el('section', 'mg-card mg-lists-right');
       var title = current === 'fav' ? '★ Favorites' : (D.lists.find(function (l) { return l.id === current; }) || {}).name;
       add(right, add(el('div', 'mg-row-head'), el('h2', null, title + ' · ' + keys.length + (keys.length === 1 ? ' channel' : ' channels')),
-        btn(adding ? 'Done adding' : '＋ Add channels', adding ? 'btn btn-ghost' : 'btn btn-primary', function () { adding = !adding; draw(); })));
+        btn(adding ? 'Done adding' : '＋ Add channels', adding ? 'btn btn-ghost' : 'btn btn-primary', function () {
+          var n = Object.keys(picked).length;
+          if (adding && n) {
+            if (confirm('Add the ' + n + (n === 1 ? ' channel' : ' channels') + ' you ticked? (Cancel leaves them out.)')) addPicked(); else picked = {};
+          }
+          adding = !adding; draw();
+        })));
       if (adding) right.appendChild(addPanel(keys));
       add(right, sortSeg('Sort', ['az', 'manual'], listSort(D), function (m) { change(function (d) { setSort(d, m); }); }),
         el('p', 'fineprint', 'A–Z mixes channels from every playlist by name. Dragging switches to Manual, starting from the order shown.'));
@@ -1464,12 +1500,20 @@
       add(foot, status, btn('Undo last change', 'btn btn-ghost', function () { var u = sv.undo(); if (u) { D = u; sv.save(D); draw(); } }));
     }
     var adding = false, addPl = mine[0] && mine[0].id, addCat = '', addFind = '', picked = {};
+    function addPicked() {
+      var add2 = Object.keys(picked); if (!add2.length) return;
+      picked = {};
+      change(function (d) { setKeys(d, storedKeys(d).concat(add2.filter(function (k) { return storedKeys(d).indexOf(k) < 0; }))); });
+      say('Added ' + add2.length + (add2.length === 1 ? ' channel.' : ' channels.'));
+    }
     function addPanel(keys) {
       var box = el('div', 'mg-addpanel');
       var find = el('input'); find.type = 'search'; find.placeholder = 'Search ' + q.name + '’s channels'; find.value = addFind; find.setAttribute('aria-label', 'Search channels');
       var sel = el('select', 'mg-select'); sel.setAttribute('aria-label', 'Playlist');
       mine.forEach(function (p) { var o = el('option', null, p.name); o.value = p.id; o.selected = p.id === addPl; sel.appendChild(o); });
-      add(box, add(el('div', 'mg-row-head'), find, sel));
+      // Owner, Nov 19: ticked channels are only added with the Add button, so it's at the top as well as the bottom.
+      var topbar = el('div', 'mg-addfoot mg-addtop');
+      add(box, add(el('div', 'mg-row-head'), find, sel), topbar);
       var cols = el('div', 'mg-addcols'), catNav = el('nav', 'mg-addcats'), res = el('div', 'mg-addres');
       add(cols, catNav, res); box.appendChild(cols);
       var footer = el('div', 'mg-addfoot'); box.appendChild(footer);
@@ -1512,16 +1556,14 @@
         drawFoot();
       }
       function drawFoot() {
-        footer.innerHTML = '';
         var n = Object.keys(picked).length;
-        add(footer, el('span', null, n ? n + ' selected · added at the end' : 'Tick channels to add them'),
-          btn('Add ' + (n || '') + (n === 1 ? ' channel' : ' channels'), 'btn btn-primary', function () {
-            if (!n) return;
-            var add2 = Object.keys(picked); picked = {};
-            change(function (d) { setKeys(d, storedKeys(d).concat(add2.filter(function (k) { return storedKeys(d).indexOf(k) < 0; }))); });
-            say('Added ' + add2.length + (add2.length === 1 ? ' channel.' : ' channels.'));
-          }));
-        footer.lastChild.disabled = !n;
+        [topbar, footer].forEach(function (f) {
+          f.innerHTML = '';
+          add(f, el('span', null, n ? n + ' ticked · not added yet; they go at the end' : 'Tick channels, then Add'),
+            btn('Add ' + (n || '') + (n === 1 ? ' channel' : ' channels'), 'btn btn-primary', addPicked));
+          f.lastChild.disabled = !n;
+          f.classList.toggle('dirty', n > 0);
+        });
       }
       var t = null;
       find.addEventListener('input', function () { clearTimeout(t); t = setTimeout(function () { addFind = find.value; drawAdd(); find.focus(); }, 200); });

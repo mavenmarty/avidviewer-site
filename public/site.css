@@ -16,7 +16,7 @@
   --body: Inter, system-ui, -apple-system, 'Segoe UI', sans-serif;
 }
 * { box-sizing: border-box; }
-html { scroll-behavior: smooth; }
+html { scroll-behavior: smooth; scroll-padding-top: 96px; }
 body { margin: 0; background: var(--ground); color: var(--text); font-family: var(--body); line-height: 1.5; -webkit-font-smoothing: antialiased; }
 a { color: var(--accent); }
 a:hover { color: var(--accent-hi); }
@@ -27,8 +27,10 @@ p { margin: 0; }
 .skip { position: absolute; left: -9999px; }
 .skip:focus { left: 16px; top: 16px; background: var(--accent); color: var(--accent-ink); padding: 8px 12px; border-radius: 8px; z-index: 10; }
 
-/* header */
-.site-header .wrap { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; padding-top: 18px; padding-bottom: 18px; }
+/* header: stays at the top while scrolling (owner, Nov 19), so sections and the account are one click away */
+.site-header { position: sticky; top: 0; z-index: 50; background: rgba(20, 16, 13, 0.94); border-bottom: 1px solid var(--line); }
+@supports (backdrop-filter: blur(8px)) { .site-header { background: rgba(20, 16, 13, 0.82); backdrop-filter: blur(8px); } }
+.site-header .wrap { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 16px; padding-top: 12px; padding-bottom: 12px; }
 .brand { display: flex; align-items: center; gap: 10px; text-decoration: none; color: var(--text); font-family: var(--display); font-weight: 700; font-size: 20px; }
 .brand:hover { color: var(--text); }
 .nav { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 22px; font-size: 15px; }
@@ -41,7 +43,8 @@ p { margin: 0; }
 .btn-primary:hover { background: var(--accent-hi); color: var(--accent-ink); }
 .btn-ghost { border-color: var(--line-2); color: var(--text); font-weight: 500; }
 .btn-ghost:hover { border-color: var(--accent); color: var(--text); }
-.nav .btn { padding: 11px 16px; font-size: 15px; color: var(--accent-ink); }
+.nav .btn { padding: 11px 16px; font-size: 15px; color: var(--accent-ink); max-width: 16em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nav .btn[aria-current="page"], .nav .btn:hover { color: var(--accent-ink); }
 
 /* sections */
 .band { background: var(--band); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
@@ -440,3 +443,20 @@ button.btn-ghost { background: transparent; color: var(--text); }
 .mg-sortseg { display: flex; gap: 8px; align-items: center; font-size: 14px; color: var(--soft); flex-wrap: wrap; margin-bottom: 4px; }
 .mg-sortseg .btn.on { border-color: var(--accent); color: var(--text); background: var(--surface-2, transparent); }
 .mg-beta { margin-top: 14px; }
+
+/* Save bar at the top of What X can see, and the Add bar at the top of Add channels (owner, Nov 19) */
+.mg-savebar { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding: 12px 14px; margin: 4px 0 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--card-2); }
+.mg-savebar.dirty, .mg-addfoot.dirty { border-color: var(--accent); }
+.mg-savebar.dirty .mg-savenote { color: var(--accent-hi); font-weight: 600; }
+.mg-savenote { color: var(--soft); font-size: 14px; }
+.mg-addtop { border-top: 0; border-bottom: 1px solid var(--line); padding: 0 0 10px; }
+.mg-addtop.dirty, .mg-addfoot.dirty { color: var(--accent-hi); }
+
+/* Narrow screens: the sticky header stays one row; the links scroll sideways */
+@media (max-width: 640px) {
+  .site-header .wrap { flex-wrap: nowrap; }
+  .brand span { display: none; }
+  .nav { flex-wrap: nowrap; overflow-x: auto; gap: 18px; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+  .nav a { white-space: nowrap; }
+  .nav .btn { position: sticky; right: 0; flex: none; padding: 9px 12px; max-width: 12em; box-shadow: -14px 0 12px rgba(20, 16, 13, 0.9); }
+}

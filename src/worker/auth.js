@@ -397,6 +397,11 @@ export async function handleAccountApi(request, env, realUrl) {
     if (user) await env.DB.prepare('DELETE FROM sessions WHERE token_hash = ?1').bind(user.sessionHash).run();
     return json({ ok: true }, 200, { 'set-cookie': sessionCookie('', 0) });
   }
+  // The site header on every page: the account's name when signed in (the email's first part, owner's choice
+  // Nov 19), never a 401, so signed-out visitors see no error.
+  if (p === '/api/me' && url.searchParams.get('brief') === '1') {
+    return json({ signedIn: Boolean(user), name: user ? String(user.email).split('@')[0] : null }, 200, { 'cache-control': 'no-store' });
+  }
   if (!user) return json({ error: 'Please sign in.' }, 401);
   if (p.startsWith('/api/admin/')) return handleAdminApi(request, env, url, user);
 

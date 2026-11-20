@@ -123,19 +123,3 @@
     </div>
   </div>
 </section>
-
-<section id="notify" class="section" aria-labelledby="notify-title">
-  <div class="wrap notify">
-    <h2 id="notify-title" style="font-size: 40px">Hear about new devices</h2>
-    <p class="lede">Phone and tablet apps, Apple TV and Roku are planned. Leave your email and we'll tell you when they launch — nothing else.</p>
-    <form id="notify-form" action="/api/notify" method="post">
-      <label for="email" class="hp">Email address</label>
-      <input id="email" name="email" type="email" required autocomplete="email" placeholder="you@example.com" aria-label="Email address">
-      <label class="hp" for="website">Leave this empty</label>
-      <input class="hp" id="website" name="website" type="text" tabindex="-1" autocomplete="off">
-      <button class="btn btn-primary" type="submit">Notify me</button>
-    </form>
-    <p id="form-msg" class="form-msg" role="status" aria-live="polite"></p>
-    <p class="fineprint">We'll only use your email for Avid Viewer launch news. See our <a href="/privacy/">privacy notice</a>.</p>
-  </div>
-</section>

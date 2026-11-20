@@ -45,8 +45,7 @@ function layout({ title, description, nav, path, body, scripts = '' }) {
       <a href="/#devices">Get the app</a>
       <a href="/guide/"${cur('guide')}>User guide</a>
       <a href="/support/"${cur('support')}>Support</a>
-      <a href="/playlists/"${cur('account')}>My account</a>
-      <a class="btn btn-primary" href="/#notify">Get launch news</a>
+      <a class="btn btn-primary" id="hdr-account" href="/signin/"${cur('account')}>Sign up / Sign in</a>
     </nav>
   </div>
 </header>
@@ -64,6 +63,7 @@ ${body}
     <p class="disclaimer">Avid Viewer is a player for playlists you supply. It includes no channels, streams or subscriptions to content. © ${new Date().getFullYear()} Avid Viewer.</p>
   </div>
 </footer>
+<script src="/header.js" defer></script>
 ${scripts}
 </body>
 </html>
@@ -171,8 +171,8 @@ async function main() {
     const { meta, body } = readMeta(await readFile(join('src/pages', f), 'utf8'));
     const name = basename(f, '.html');
     const path = name === 'index' ? '/' : `/${name}/`;
-    const scripts = name === 'index' ? '<script src="/notify.js" defer></script>'
-      : name === 'playlists' || name === 'profiles' || name === 'devices' ? '<script src="/js/webauthn.js" defer></script><script src="/playlists.js" defer></script><script src="/manage.js" defer></script><script src="/attention.js" defer></script>'
+    // Launch news (the /#notify form and notify.js) is parked (owner, Nov 19); /api/notify still answers.
+    const scripts = name === 'playlists' || name === 'profiles' || name === 'devices' ? '<script src="/js/webauthn.js" defer></script><script src="/playlists.js" defer></script><script src="/manage.js" defer></script><script src="/attention.js" defer></script>'
       : name === 'signin' || name === 'account' || name === 'backups' || name === 'link' ? '<script src="/js/webauthn.js" defer></script><script src="/account.js" defer></script>' + (name === 'account' || name === 'backups' ? '<script src="/attention.js" defer></script>' : '')
       : name === 'admin' ? '<script src="/js/webauthn.js" defer></script><script src="/admin.js" defer></script>' : '';
     const html = layout({ ...meta, path, body, scripts });
