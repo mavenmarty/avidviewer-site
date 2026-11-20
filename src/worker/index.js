@@ -1,7 +1,7 @@
 // avidviewer.app: serves the static site and the small /api it needs.
 import { handleAccountApi } from './auth.js';
 import { handleTvApi } from './devices.js';
-import { githubWebhook } from './reports.js';
+import { githubWebhook, reportFormInfo, reportFormSubmit } from './reports.js';
 
 // Phase 1: POST /api/notify stores a launch-news sign-up in D1.
 // Setup codes (Nov 15–16, 2026) are retired: /api/setup answers 410 and /setup/ goes to /playlists/.
@@ -83,6 +83,15 @@ export default {
       } catch (e) {
         console.error('account api failed', e);
         return json({ error: 'Something went wrong on our side. Please try again later.' }, 500);
+      }
+      // Report a problem from the TV's QR code (no sign-in; the code says which device): see reports.js.
+      if (url.pathname === '/api/report/form' && request.method === 'GET') {
+        try { return await reportFormInfo(env, url); } catch (e) { console.error('report form failed', e); return json({ error: 'Something went wrong on our side. Please try again later.' }, 500); }
+      }
+      if (url.pathname === '/api/report/submit' && request.method === 'POST') {
+        const origin = request.headers.get('origin');
+        if (origin !== url.origin && !(env.SITE_ORIGIN && origin === env.SITE_ORIGIN)) return json({ error: 'Not allowed.' }, 403);
+        try { return await reportFormSubmit(request, env); } catch (e) { console.error('report submit failed', e); return json({ error: 'Something went wrong on our side. Please try again later.' }, 500); }
       }
       // GitHub tells the site when an issue changes (reports.js), signed with GITHUB_WEBHOOK_SECRET.
       if (url.pathname === '/api/github/webhook' && request.method === 'POST') {

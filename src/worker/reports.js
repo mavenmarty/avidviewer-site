@@ -31,7 +31,7 @@ const REPO = 'mavenmarty/avid-viewer';
 const DAY = 24 * 3600 * 1000;
 const KEEP_FIXED = 30 * DAY;
 const UNLINKED_PER_HOUR = 20;
-const KINDS = new Set(['crash', 'playback', 'security']);
+const KINDS = new Set(['crash', 'playback', 'security', 'problem']);
 
 function clip(v, n) { return typeof v === 'string' ? v.slice(0, n) : ''; }
 function parse(s, d) { try { return JSON.parse(s); } catch { return d; } }
@@ -297,6 +297,7 @@ function shown(rep, st, now) {
 function headline(rep) {
   const s = (rep.summary || '').replace(/^(Error: |Playback log:? ?)/, '').trim();
   if (rep.kind === 'playback') return s ? 'Playback log: ' + s : 'Playback log';
+  if (rep.kind === 'problem') return s || 'A problem you reported';
   return s || 'Crash report';
 }
 
@@ -507,4 +508,88 @@ export async function adminBugNote(request, env, admin, audit) {
 
 export async function adminBugSync(env) {
   return json(await syncBugs(env, true));
+}
+
+// ---------------------------------------------------------------- Report a problem (the TV's QR code → /report/?c=)
+
+const FORM_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+const FORM_TTL = DAY;
+const FORM_USES = 3;
+
+function formCode() {
+  const out = []; const buf = new Uint8Array(1);
+  while (out.length < 10) { crypto.getRandomValues(buf); if (buf[0] < 248) out.push(FORM_ALPHABET[buf[0] % 31]); }
+  return out.join('');
+}
+
+/** The TV asks for a code for its Report a bug QR code (linked or not). */
+export async function tvReportForm(request, env, device) {
+  const b = parse(await request.text(), null);
+  if (!b || b.app !== 'avid-viewer') return json({ error: 'Unknown sender.' }, 400);
+  const now = Date.now();
+  const ipHash = await sha256hex(ipOf(request) + new Date(now).toISOString().slice(0, 10));
+  await env.DB.prepare('DELETE FROM report_forms WHERE expires_at < ?1').bind(now - DAY).run();
+  if (!device) {
+    const n = (await env.DB.prepare('SELECT COUNT(*) AS n FROM report_forms WHERE device_id IS NULL AND ip_hash = ?1 AND created_at > ?2').bind(ipHash, now - 3600_000).first())?.n || 0;
+    if (n >= 30) return json({ error: 'Too many codes. Try again in an hour.' }, 429);
+  }
+  const code = formCode();
+  const info = clip(b.device, 200);
+  await env.DB.prepare(`INSERT INTO report_forms (code, device_id, user_id, app_version, device_info, device_name, crash, ip_hash, created_at, expires_at)
+    VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)`)
+    .bind(code, device?.id || null, device?.user_id || null, clip(b.version, 40), info, clip(device?.name || b.name || '', 60) || info.split(' · ')[0] || 'Your TV',
+      clip(b.crash, 400) || null, ipHash, now, now + FORM_TTL).run();
+  const origin = env.SITE_ORIGIN || 'https://avidviewer.app';
+  return json({ code, url: `${origin}/report/?c=${code}`, expiresAt: now + FORM_TTL });
+}
+
+async function openForm(env, code) {
+  const c = String(code || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (c.length !== 10) return null;
+  return env.DB.prepare('SELECT * FROM report_forms WHERE code = ?1 AND expires_at > ?2').bind(c, Date.now()).first();
+}
+
+/** The page (no sign-in): which device the code is for. */
+export async function reportFormInfo(env, url) {
+  const f = await openForm(env, url.searchParams.get('c'));
+  if (!f) return json({ error: "This code has expired. On the TV, open Settings › Updates & about › Report a bug again for a new QR code." }, 404);
+  return json({ device: f.device_name, model: f.device_info, version: f.app_version, linked: Boolean(f.device_id), crash: f.crash || null, left: Math.max(0, FORM_USES - f.uses) });
+}
+
+/** The page sends a problem: it becomes a report of kind "problem" for the device that made the code. */
+export async function reportFormSubmit(request, env) {
+  const b = await body(request);
+  if (!b) return json({ error: "That didn't come through. Please try again." }, 400);
+  if (b.website) return json({ ok: true, id: 'AVR-00000000', linked: false }); // bots fill the hidden field
+  const f = await openForm(env, b.c);
+  if (!f) return json({ error: "This code has expired. On the TV, open Settings › Updates & about › Report a bug again for a new QR code." }, 404);
+  if (f.uses >= FORM_USES) return json({ error: 'This code has been used three times. Scan the QR code on the TV again for a new one.' }, 429);
+  const what = String(b.what || '').trim().slice(0, 4000);
+  if (what.length < 5) return json({ error: 'Tell us what happened (a few words is enough).' }, 400);
+  const steps = String(b.steps || '').trim().slice(0, 4000);
+  const OFTEN = { once: 'Once', sometimes: 'Sometimes', always: 'Every time' };
+  const often = OFTEN[b.often] || '';
+  const where = String(b.where || '').trim().slice(0, 60);
+  const now = Date.now();
+  const id = 'AVR-' + [...crypto.getRandomValues(new Uint8Array(4))].map((x) => x.toString(16).padStart(2, '0')).join('');
+  const text = [
+    'Reported on avidviewer.app from the TV\'s Report a bug QR code.',
+    '',
+    'What happened:', what,
+    steps ? '\nWhat they were doing:\n' + steps : '',
+    where ? '\nWhere in the app: ' + where : '',
+    often ? 'How often: ' + often : '',
+    b.crash && f.crash ? '\nLast crash on this TV:\n' + f.crash : '',
+    '',
+    'App version: ' + (f.app_version || 'unknown'),
+    'Device: ' + (f.device_info || 'unknown'),
+  ].filter((x) => x !== '').join('\n');
+  const summary = what.split('\n')[0].slice(0, 200);
+  await env.DB.batch([
+    env.DB.prepare(`INSERT INTO reports (id, kind, device_id, user_id, app_version, device_info, summary, body, signatures, state, source, ip_hash, created_at, updated_at)
+      VALUES (?1, 'problem', ?2, ?3, ?4, ?5, ?6, ?7, '[]', 'new', 'form', ?8, ?9, ?9)`)
+      .bind(id, f.device_id, f.user_id, f.app_version, f.device_info, summary, text, f.ip_hash, now),
+    env.DB.prepare('UPDATE report_forms SET uses = uses + 1 WHERE code = ?1').bind(f.code),
+  ]);
+  return json({ ok: true, id, linked: Boolean(f.device_id) });
 }

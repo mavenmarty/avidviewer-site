@@ -22,6 +22,7 @@
   }
   function vnum(v) { var m = /(\d+)\.(\d+)\.(\d+)/.exec(String(v || '')); return m ? (+m[1]) * 1e6 + (+m[2]) * 1e3 + (+m[3]) : -1; }
   function newer(a, b) { return vnum(a) > vnum(b); }
+  var KINDS = { playback: 'Playback log', crash: 'Crash report', problem: 'A problem you reported' };
   var PILL = { received: 'rp-grey', looking: 'rp-teal', fixing: 'rp-blue', need_info: 'rp-amber', fixed: 'rp-amber', not_app: 'rp-dim', closed: 'rp-dim' };
   function pill(st) { return el('span', 'rp-pill ' + (PILL[st.key] || 'rp-grey'), st.label); }
   var OPEN = { received: 1, looking: 1, fixing: 1, need_info: 1 };
@@ -74,7 +75,7 @@
         var a = el('a', 'rp-row'); a.href = '#r=' + r.id;
         add(a, add(el('div', 'rp-st'), pill(r.status)),
           add(el('div', 'rp-what'), el('div', 'rp-title', r.title),
-            el('div', 'rp-sub', (r.kind === 'playback' ? 'Playback log' : 'Crash report') + (r.bugs.length ? ' · bug ' + r.bugs.join(', ') : '') + (r.updateTo ? ' · update to ' + r.updateTo : ''))),
+            el('div', 'rp-sub', ((KINDS[r.kind] || 'Crash report')) + (r.bugs.length ? ' · bug ' + r.bugs.join(', ') : '') + (r.updateTo ? ' · update to ' + r.updateTo : ''))),
           add(el('div', 'rp-dev'), el('div', null, r.device.name), el('div', 'rp-sub', [r.device.model, r.device.version ? 'on ' + r.device.version : ''].filter(Boolean).join(' · '))),
           el('div', 'rp-when', when(r.sentAt)));
         add(ul, add(el('li'), a));
@@ -93,7 +94,7 @@
       if (!r._ok) { add(root, el('p', 'rp-empty', r.error || 'That report was not found.')); return; }
       add(root.querySelector('.rp-crumb'), document.createTextNode(' › ' + r.device.name + ' · ' + when(r.sentAt)));
       add(root, add(el('header', 'rp-head'), el('h1', null, r.title),
-        add(el('div', 'rp-headline'), pill(r.status), el('span', 'rp-sub', (r.kind === 'playback' ? 'Playback log' : 'Crash report') + ' from ' + r.device.name))));
+        add(el('div', 'rp-headline'), pill(r.status), el('span', 'rp-sub', ((KINDS[r.kind] || 'Crash report')) + ' from ' + r.device.name))));
       var ol = el('ol', 'rp-steps');
       var reached = true;
       r.steps.forEach(function (s, i) {
@@ -143,7 +144,7 @@
       var aside = add(el('aside', 'rp-card'), el('h2', null, 'Report details'));
       var dl = el('dl', 'rp-dl');
       [['Device', r.device.name + (r.device.model ? ' · ' + r.device.model : '')], ['App version', r.appVersion + (r.device.version && newer(r.device.version, r.appVersion) ? ' → now ' + r.device.version : '')],
-       ['Kind', r.kind === 'playback' ? 'Playback log' : 'Crash report'], ['Summary', r.summary || '—'], ['Report id', r.id]].forEach(function (x) { add(dl, el('dt', null, x[0]), el('dd', null, x[1])); });
+       ['Kind', (KINDS[r.kind] || 'Crash report')], ['Summary', r.summary || '—'], ['Report id', r.id]].forEach(function (x) { add(dl, el('dt', null, x[0]), el('dd', null, x[1])); });
       add(aside, dl);
       r.found.forEach(function (b) { var p = el('p', 'rp-sub'); var a = el('a', null, 'Bug #' + b.bug + ' on GitHub'); a.href = 'https://github.com/mavenmarty/avid-viewer/issues/' + b.bug; a.target = '_blank'; a.rel = 'noopener'; add(p, a, document.createTextNode(' (public; names no one)')); add(aside, p); });
       var det = el('details', 'rp-sent'); add(det, el('summary', null, 'What the device sent'), el('pre', null, r.body), el('p', 'fineprint', 'Channels and titles are codes; what you watched is never sent.'));

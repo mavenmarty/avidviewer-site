@@ -20,7 +20,7 @@ import { handleListsTvApi } from './lists.js';
 import { handleHistoryTvApi } from './history.js';
 import { json, randomToken, sha256hex, ipOf, body } from './auth.js';
 import { betaFor } from './beta.js';
-import { tvReport, tvClaim as tvReportsClaim, wantsLog } from './reports.js';
+import { tvReport, tvClaim as tvReportsClaim, wantsLog, tvReportForm } from './reports.js';
 
 const ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // same as setup codes: no 0/O, 1/I/L
 const TV_CODE_TTL = 10 * 60 * 1000;
@@ -258,6 +258,10 @@ export async function handleTvApi(request, env, realUrl) {
     return tvReport(request, env, d && d.status === 'active' ? d : null);
   }
   if (p === '/api/tv/reports/claim') return tvReportsClaim(request, env, await deviceFor(request, env));
+  if (p === '/api/tv/reports/form') {
+    const d = await deviceFor(request, env);
+    return tvReportForm(request, env, d && d.status === 'active' ? d : null);
+  }
   switch (p) {
     case '/api/tv/link/start': return tvStart(request, env, url);
     case '/api/tv/link/poll': return tvPoll(request, env);

@@ -200,7 +200,7 @@
   });
 
   // ---------------------------------------------------------------- reports (src/worker/reports.js)
-  var KIND = { crash: 'Crash report', playback: 'Playback log', security: 'Security alert' };
+  var KIND = { crash: 'Crash report', playback: 'Playback log', security: 'Security alert', problem: 'Report a problem (from the QR code)' };
   var BUGST = { open: 'Being fixed', need_info: 'Needs details', fixed: 'Fixed', closed: 'Closed' };
   function rpAct(id, action, extra) {
     var d = Object.assign({ id: id, action: action }, extra || {});
@@ -215,7 +215,7 @@
     var box = el('div', 'adm-rp-row');
     var head = el('div', 'adm-rp-top');
     head.appendChild(el('strong', null, KIND[r.kind] || r.kind));
-    head.appendChild(el('span', 'soft', r.device + (r.email ? ' (' + r.email + ')' : '') + ' · ' + (r.deviceInfo || 'device not given') + ' · ' + r.appVersion + ' · ' + when(r.sentAt) + (r.source === 'relay' ? ' · by email relay' : '')));
+    head.appendChild(el('span', 'soft', r.device + (r.email ? ' (' + r.email + ')' : '') + ' · ' + (r.deviceInfo || 'device not given') + ' · ' + r.appVersion + ' · ' + when(r.sentAt) + (r.source === 'relay' ? ' · by email relay' : r.source === 'form' ? ' · written on avidviewer.app' : '')));
     box.appendChild(head);
     box.appendChild(el('div', null, r.summary || r.title));
     if (r.reopenedAt) box.appendChild(el('div', 'adm-rp-flag', 'Back from the account: “It’s still happening” (' + when(r.reopenedAt) + ')'));

@@ -1,0 +1,36 @@
+<!-- {"title": "Report a problem — Avid Viewer", "description": "Tell us what went wrong on your TV.", "nav": "", "noindex": true} -->
+<div class="wrap rf">
+  <header class="page-head">
+    <h1>Report a problem</h1>
+    <p id="rf-for">Loading…</p>
+  </header>
+  <form id="rf-form" class="rf-form" hidden novalidate>
+    <label class="rf-field">What happened? <span class="rf-req">(required)</span>
+      <textarea id="rf-what" rows="4" maxlength="4000" required placeholder="For example: the picture froze on a channel and didn't come back"></textarea>
+    </label>
+    <label class="rf-field">What were you doing just before?
+      <textarea id="rf-steps" rows="3" maxlength="4000" placeholder="For example: TV Guide › Sports › pressed OK on a channel"></textarea>
+    </label>
+    <div class="rf-row">
+      <label class="rf-field">Where in the app
+        <select id="rf-where">
+          <option value="">Choose…</option>
+          <option>TV Guide</option><option>Full screen</option><option>Movies</option><option>Series</option><option>Discover</option>
+          <option>Sports</option><option>Search</option><option>Settings</option><option>Starting the app</option><option>Somewhere else</option>
+        </select>
+      </label>
+      <fieldset class="rf-field rf-often">
+        <legend>How often</legend>
+        <label><input type="radio" name="often" value="once"> Once</label>
+        <label><input type="radio" name="often" value="sometimes"> Sometimes</label>
+        <label><input type="radio" name="often" value="always"> Every time</label>
+      </fieldset>
+    </div>
+    <label class="rf-check" id="rf-crash-wrap" hidden><input type="checkbox" id="rf-crash" checked> Include the last crash on this TV: <span id="rf-crash-text"></span></label>
+    <input type="text" name="website" id="rf-hp" class="hp" tabindex="-1" autocomplete="off" aria-hidden="true">
+    <p class="fineprint">Sent with this TV's app version and model. Never playlists, logins or what you watch.</p>
+    <p class="form-msg" id="rf-msg" role="status" aria-live="polite"></p>
+    <button class="btn btn-primary" type="submit" id="rf-send">Send</button>
+  </form>
+  <section id="rf-done" class="rf-done" hidden aria-live="polite"></section>
+</div>

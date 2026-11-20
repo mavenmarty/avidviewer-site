@@ -578,3 +578,20 @@ button.btn-ghost { background: transparent; color: var(--text); }
 .adm-rp-bugs-head .btn { padding: 8px 12px; font-size: 13px; }
 .adm-rp-pre { max-height: 420px; overflow: auto; background: var(--card-2); border: 1px solid var(--line); border-radius: 10px; padding: 10px; font-size: 12px; white-space: pre-wrap; color: var(--soft); margin-top: 10px; }
 @media (max-width: 900px) { .adm-rp { grid-template-columns: 1fr; } }
+
+/* Report a problem (/report/, from the TV's QR code) */
+.rf { max-width: 720px; padding-bottom: 64px; }
+.rf-form, .rf-done { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 24px; display: flex; flex-direction: column; gap: 16px; margin-top: 20px; }
+.rf-field { display: flex; flex-direction: column; gap: 6px; font-weight: 600; font-size: 15px; border: 0; padding: 0; margin: 0; }
+.rf-field textarea, .rf-field select { background: var(--card-2); border: 1px solid var(--line-2); border-radius: 12px; color: var(--text); font: 16px var(--body); padding: 12px; }
+.rf-req { color: var(--muted); font-weight: 400; font-size: 13px; }
+.rf-row { display: flex; flex-wrap: wrap; gap: 16px 28px; }
+.rf-row .rf-field { flex: 1 1 220px; }
+.rf-often legend { margin-bottom: 6px; }
+.rf-often label { font-weight: 400; display: inline-flex; gap: 6px; align-items: center; margin-right: 14px; min-height: 32px; }
+.rf-check { display: block; font-size: 14px; color: var(--soft); line-height: 1.5; }
+.rf-check input { margin: 0 8px 0 0; vertical-align: -2px; }
+.rf-check span { color: var(--text); }
+.rf-form .btn { align-self: flex-start; }
+.rf-done h2 { margin: 0; font-size: 24px; }
+.rf-done p { margin: 0; color: var(--soft); }

@@ -14,7 +14,7 @@ const logo = `<svg width="34" height="34" viewBox="0 0 34 34" aria-hidden="true"
 
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
-function layout({ title, description, nav, path, body, scripts = '' }) {
+function layout({ title, description, nav, path, body, scripts = '', noindex = false }) {
   const cur = (k) => (nav === k ? ' aria-current="page"' : '');
   return `<!doctype html>
 <html lang="en">
@@ -23,7 +23,7 @@ function layout({ title, description, nav, path, body, scripts = '' }) {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${esc(title)}</title>
 <meta name="description" content="${esc(description)}">
-<link rel="canonical" href="${SITE}${path}">
+${noindex ? '<meta name="robots" content="noindex, nofollow, noarchive">' : `<link rel="canonical" href="${SITE}${path}">`}
 <meta property="og:title" content="${esc(title)}">
 <meta property="og:description" content="${esc(description)}">
 <meta property="og:url" content="${SITE}${path}">
@@ -176,6 +176,7 @@ async function main() {
     const path = name === 'index' ? '/' : `/${name}/`;
     // Launch news (the /#notify form and notify.js) is parked (owner, Nov 19); /api/notify still answers.
     const scripts = name === 'playlists' || name === 'profiles' || name === 'devices' ? '<script src="/js/webauthn.js" defer></script><script src="/playlists.js" defer></script><script src="/manage.js" defer></script><script src="/attention.js" defer></script>'
+      : name === 'report' ? '<script src="/report.js" defer></script>'
       : name === 'reports' ? '<script src="/reports.js" defer></script><script src="/attention.js" defer></script>'
       : name === 'signin' || name === 'account' || name === 'backups' || name === 'link' ? '<script src="/js/webauthn.js" defer></script><script src="/account.js" defer></script>' + (name === 'account' || name === 'backups' ? '<script src="/attention.js" defer></script>' : '')
       : name === 'admin' ? '<script src="/js/webauthn.js" defer></script><script src="/admin.js" defer></script>' : '';
