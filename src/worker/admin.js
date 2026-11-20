@@ -9,6 +9,7 @@
 
 import { json, body, randomToken, sendSignInLink } from './auth.js';
 import { backupsFor } from './devices.js';
+import { adminLicense, licenseFor, licensesByUser, endingSoon } from './licenses.js';
 import { adminBeta, adminBetaChoose, adminBetaOffer } from './beta.js';
 import { adminReports, adminReport, adminTriage, adminBugNote, adminBugSync } from './reports.js';
 
@@ -56,7 +57,8 @@ async function stats(env) {
   ).bind(iso(now - 30 * DAY)).all()).results;
   // Whether the BACKUP_PIN_KEY secret reaches the Worker (never its value): without it backups are refused.
   const backupsReady = typeof env.BACKUP_PIN_KEY === 'string' && env.BACKUP_PIN_KEY.length > 0;
-  return json({ users, new7, new30, active7, suspended, tvs, tvs7, passkeys, playlists, playlistsWaiting, launchNews, backupCount, backupBytes, backupsReady, versions, daily });
+  const licensesEnding = (await endingSoon(env, now)).map((x) => ({ id: x.id, email: x.email, status: x.status, kind: x.kind, endsAt: x.endsAt }));
+  return json({ users, new7, new30, active7, suspended, tvs, tvs7, passkeys, playlists, playlistsWaiting, launchNews, backupCount, backupBytes, backupsReady, versions, daily, licensesEnding });
 }
 
 async function users(env, url) {
@@ -75,7 +77,8 @@ async function users(env, url) {
        FROM users u ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
       ORDER BY u.created_at DESC LIMIT 200`
   ).bind(...args).all()).results;
-  return json({ users: rows.map((u) => ({ id: u.id, email: u.email, createdAt: u.created_at, lastSignIn: u.last_sign_in, role: u.role, status: u.status, tvs: u.tvs, playlists: u.playlists, deviceOnlyPlaylists: u.device_only })) });
+  const lic = await licensesByUser(env);
+  return json({ users: rows.map((u) => ({ id: u.id, email: u.email, createdAt: u.created_at, lastSignIn: u.last_sign_in, role: u.role, status: u.status, tvs: u.tvs, playlists: u.playlists, deviceOnlyPlaylists: u.device_only, license: lic[u.id] || { status: 'none' } })) });
 }
 
 async function userDetail(env, url) {
@@ -93,7 +96,9 @@ async function userDetail(env, url) {
     all('SELECT at, admin_email, action, detail, reason FROM admin_audit WHERE target_id = ?1 ORDER BY at DESC LIMIT 50'),
   ]);
   return json({
-    user: { id: u.id, email: u.email, status: u.status, role: u.role, createdAt: u.created_at, lastSignIn: u.last_sign_in, watchHistory: Boolean(u.watch_history), playlists: counts?.playlists || 0, deviceOnlyPlaylists: counts?.device_only || 0 },
+    user: { id: u.id, email: u.email, status: u.status, role: u.role, createdAt: u.created_at, lastSignIn: u.last_sign_in, watchHistory: Boolean(u.watch_history), playlists: counts?.playlists || 0, deviceOnlyPlaylists: counts?.device_only || 0, license: await licenseFor(env, u.id) },
+    licenses: (await env.DB.prepare('SELECT kind, starts_at, ends_at, source, granted_by, note, created_at, revoked_at FROM licenses WHERE user_id = ?1 ORDER BY created_at DESC').bind(u.id).all()).results
+      .map((l) => ({ kind: l.kind, startsAt: l.starts_at, endsAt: l.ends_at, source: l.source, by: l.granted_by, note: l.note, revokedAt: l.revoked_at })),
     devices: devices.map((d) => ({ id: d.id, name: d.name, model: d.model, appVersion: d.app_version, linkedAt: d.created_at, lastSeen: d.last_seen, removedAt: d.revoked_at })),
     sessions: sessions.filter((s) => s.expires_at > Date.now()).map((s) => ({ label: s.label, method: s.method, createdAt: s.created_at, lastSeen: s.last_seen })),
     passkeys: passkeys.map((p) => ({ name: p.name, createdAt: p.created_at, lastUsed: p.last_used })),
@@ -210,6 +215,7 @@ async function deleteUser(request, env, admin) {
     env.DB.prepare('DELETE FROM device_playlists WHERE user_id = ?1').bind(u.id),
     env.DB.prepare('DELETE FROM account_playlists WHERE user_id = ?1').bind(u.id),
     env.DB.prepare('DELETE FROM devices WHERE user_id = ?1').bind(u.id),
+    env.DB.prepare('DELETE FROM licenses WHERE user_id = ?1').bind(u.id),
     env.DB.prepare('DELETE FROM link_codes WHERE user_id = ?1').bind(u.id),
     env.DB.prepare('DELETE FROM admin_notes WHERE user_id = ?1').bind(u.id),
     env.DB.prepare('DELETE FROM sign_in_links WHERE email = ?1').bind(u.email),
@@ -243,6 +249,7 @@ export async function handleAdminApi(request, env, url, user) {
   }
   switch (p) {
     case '/api/admin/note': return addNote(request, env, user);
+    case '/api/admin/license': return adminLicense(request, env, user, audit, body);
     case '/api/admin/revoke-tv': return revokeTv(request, env, user);
     case '/api/admin/suspend': return suspend(request, env, user);
     case '/api/admin/end-sessions': return endSessions(request, env, user);

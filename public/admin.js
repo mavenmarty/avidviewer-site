@@ -20,7 +20,16 @@
     if (!rows.length) { var e = el('tr'); var td = el('td', 'soft', 'Nothing yet.'); td.colSpan = head.length; e.appendChild(td); t.appendChild(e); }
     rows.forEach(function (r) { var row = el('tr'); r.cells.forEach(function (c) { row.appendChild(el('td', null, c)); }); if (r.onclick) { row.tabIndex = 0; row.addEventListener('click', r.onclick); row.addEventListener('keydown', function (e) { if (e.key === 'Enter') r.onclick(); }); } t.appendChild(row); });
   }
-  var ACTIONS = { suspend: 'Suspended', unsuspend: 'Lifted suspension', 'delete': 'Deleted account', revoke_tv: 'Signed out device', resend_link: 'Sent sign-in link', end_sessions: 'Signed out browsers', note: 'Added note', beta_choose: 'Chose for the beta', beta_remove: 'Took out of the beta', beta_offer: 'Offered beta build', report_add: 'Added a report to a bug', report_file: 'Filed a bug', report_not_app: 'Marked a report not an app problem', report_need_info: 'Asked for details', report_ignore: 'Ignored a report', report_undo: 'Undid an automatic match', report_reopen: 'Put a report back in the queue', bug_note: 'Changed what a bug says' };
+  var ACTIONS = { suspend: 'Suspended', unsuspend: 'Lifted suspension', 'delete': 'Deleted account', revoke_tv: 'Signed out device', resend_link: 'Sent sign-in link', end_sessions: 'Signed out browsers', note: 'Added note', beta_choose: 'Chose for the beta', beta_remove: 'Took out of the beta', beta_offer: 'Offered beta build', report_add: 'Added a report to a bug', report_file: 'Filed a bug', report_not_app: 'Marked a report not an app problem', report_need_info: 'Asked for details', report_ignore: 'Ignored a report', report_undo: 'Undid an automatic match', report_reopen: 'Put a report back in the queue', bug_note: 'Changed what a bug says', license_grant: 'Granted a license', license_revoke: 'Revoked licenses' };
+  // Nov 20, 2026: licenses. Lengths match LENGTHS in src/worker/licenses.js.
+  var LENGTHS = [['7d', '7 days'], ['1m', '1 month'], ['3m', '3 months'], ['6m', '6 months'], ['1y', '1 year'], ['perpetual', 'Perpetual']];
+  function day(ms) { return new Date(ms).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }); }
+  function licText(l) {
+    if (!l || l.status === 'none') return 'No license';
+    var k = l.kind === 'comp' ? 'Complimentary' : l.kind === 'paid' ? 'Paid' : 'Trial';
+    if (l.perpetual) return k + ' · perpetual';
+    return k + (l.status === 'expired' ? ' · ended ' : ' · ends ') + day(l.endsAt) + (l.status === 'ending' ? ' (soon)' : '');
+  }
 
   // ---------------------------------------------------------------- gate
   function start() {
@@ -68,6 +77,11 @@
         var b = el('div', 'bar'); b.style.height = Math.max(2, Math.round(100 * n / max)) + '%'; b.title = day + ': ' + n; bars.appendChild(b);
       }
       table($('adm-versions'), ['App version', 'Devices'], (s.versions || []).map(function (v) { return { cells: [v.v, String(v.n)] }; }));
+      var le = s.licensesEnding || [];
+      $('adm-ending-none').hidden = le.length > 0;
+      table($('adm-ending'), ['Account', 'License', ''], le.map(function (x) {
+        return { cells: [x.email, licText(x), 'Open'], onclick: function () { var t = document.querySelector('[data-tab=people]'); if (t) t.click(); loadUser(x.id); } };
+      }));
     });
   }
 
@@ -76,10 +90,10 @@
   $('adm-status').addEventListener('change', loadUsers);
   function loadUsers() {
     get('/api/admin/users?q=' + encodeURIComponent($('adm-q').value) + '&status=' + $('adm-status').value).then(function (d) {
-      table($('adm-users'), ['Email', 'Joined', 'Last sign-in', 'Devices', 'Playlists', 'Status'], (d.users || []).map(function (u) {
+      table($('adm-users'), ['Email', 'Joined', 'Last sign-in', 'Devices', 'Playlists', 'License', 'Status'], (d.users || []).map(function (u) {
         // Playlists: in the account, plus "+N on devices" typed on a device and never added to the account.
         var pl = String(u.playlists || 0) + (u.deviceOnlyPlaylists ? ' + ' + u.deviceOnlyPlaylists + ' on devices' : '');
-        return { cells: [u.email + (u.role === 'admin' ? ' (admin)' : ''), when(u.createdAt), when(u.lastSignIn), String(u.tvs), pl, u.status], onclick: function () { loadUser(u.id); } };
+        return { cells: [u.email + (u.role === 'admin' ? ' (admin)' : ''), when(u.createdAt), when(u.lastSignIn), String(u.tvs), pl, licText(u.license), u.status], onclick: function () { loadUser(u.id); } };
       }));
     });
   }
@@ -100,6 +114,30 @@
       else act('Suspend', 'btn-danger', function () { ask('Suspend this account?', u.email + " can't sign in, and is signed out of every browser. Linked devices stay linked but can't use account features until the suspension is lifted.", false, false, function (reason) { return post('/api/admin/suspend', { userId: u.id, suspend: true, reason: reason }); }, id); });
       act('Delete account', 'btn-danger', function () { ask('Delete this account?', 'Deletes ' + u.email + ' with its passkeys, browsers, linked devices and notes. The audit log keeps a record. This cannot be undone.', true, false, function (reason, confirmText) { return post('/api/admin/delete', { userId: u.id, reason: reason, confirm: confirmText }); }, null); });
       box.appendChild(acts);
+
+      // License: what the account has now, Grant or extend (from the current end, so no days are lost), Revoke, history.
+      box.appendChild(el('h3', null, 'License'));
+      box.appendChild(el('p', u.license && (u.license.status === 'ending' || u.license.status === 'expired') ? 'adm-warn' : 'soft', licText(u.license)));
+      var lf = el('form', 'adm-license');
+      var sel = el('select'); sel.setAttribute('aria-label', 'Length');
+      LENGTHS.forEach(function (x) { var o = el('option', null, x[1]); o.value = x[0]; sel.appendChild(o); });
+      var kind = el('select'); kind.setAttribute('aria-label', 'Kind');
+      [['trial', 'Trial'], ['comp', 'Complimentary']].forEach(function (x) { var o = el('option', null, x[1]); o.value = x[0]; kind.appendChild(o); });
+      sel.addEventListener('change', function () { if (sel.value === 'perpetual') kind.value = 'comp'; });
+      var gb = el('button', 'btn btn-primary', u.license && u.license.status !== 'none' && u.license.status !== 'expired' ? 'Extend' : 'Grant'); gb.type = 'submit';
+      lf.appendChild(sel); lf.appendChild(kind); lf.appendChild(gb);
+      lf.addEventListener('submit', function (e) {
+        e.preventDefault();
+        var len = sel.options[sel.selectedIndex].text;
+        ask((gb.textContent === 'Extend' ? 'Extend by ' : 'Grant ') + len.toLowerCase() + '?', len === 'Perpetual' ? u.email + ' gets a license that never ends.' : (gb.textContent === 'Extend' ? 'Adds ' + len.toLowerCase() + ' from the current end date for ' : 'Gives ') + u.email + (gb.textContent === 'Extend' ? '.' : ' a ' + len.toLowerCase() + ' ' + (kind.value === 'comp' ? 'complimentary license' : 'trial') + ', starting now.'), false, false, function (reason) { return post('/api/admin/license', { userId: u.id, length: sel.value, kind: kind.value, reason: reason }); }, id);
+      });
+      if (u.license && u.license.status !== 'none') { var rv = el('button', 'linkish', 'Revoke license'); rv.type = 'button'; rv.addEventListener('click', function () { ask('Revoke the license?', 'Ends every license on ' + u.email + ' now. Nothing is blocked on their devices for now.', false, false, function (reason) { return post('/api/admin/license', { userId: u.id, revoke: true, reason: reason }); }, id); }); lf.appendChild(rv); }
+      box.appendChild(lf);
+      if ((d.licenses || []).length) {
+        var ll = el('ul', 'rows');
+        d.licenses.forEach(function (l) { var li = el('li'); li.appendChild(el('span', null, (l.kind === 'comp' ? 'Complimentary' : l.kind === 'paid' ? 'Paid' : 'Trial') + ': ' + day(l.startsAt) + ' – ' + (l.endsAt ? day(l.endsAt) : 'perpetual') + (l.revokedAt ? ' (revoked ' + day(l.revokedAt) + ')' : ''))); li.appendChild(el('span', 'soft', (l.source === 'auto' ? 'automatic' : l.by || l.source) + (l.note ? ' · "' + l.note + '"' : ''))); ll.appendChild(li); });
+        box.appendChild(ll);
+      }
 
       box.appendChild(el('h3', null, 'Devices'));
       var tvs = el('ul', 'rows');

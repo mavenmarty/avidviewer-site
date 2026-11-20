@@ -20,6 +20,7 @@ import { handleListsTvApi } from './lists.js';
 import { handleHistoryTvApi } from './history.js';
 import { json, randomToken, sha256hex, ipOf, body } from './auth.js';
 import { betaFor } from './beta.js';
+import { checkEnding } from './licenses.js';
 import { tvReport, tvClaim as tvReportsClaim, wantsLog, tvReportForm } from './reports.js';
 
 const ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // same as setup codes: no 0/O, 1/I/L
@@ -161,6 +162,8 @@ async function tvMe(request, env) {
   const version = clip(request.headers.get('x-app-version') || '', 30);
   await env.DB.prepare('UPDATE devices SET last_seen = ?1, app_version = COALESCE(NULLIF(?2, \'\'), app_version) WHERE id = ?3')
     .bind(Date.now(), version, d.id).run();
+  // Licenses ending within 3 days: the owner is emailed (at most one check an hour; never fails the check-in).
+  await checkEnding(env).catch(() => {});
   return json({ email: d.email, name: d.name, deviceId: d.id, beta: await betaFor(env, d.id), sendLog: await wantsLog(env, d.id) });
 }
 

@@ -604,3 +604,9 @@ button.btn-ghost { background: transparent; color: var(--text); }
 .mg-count { margin: 0 0 10px; color: var(--soft); font-size: 14px; }
 .mg-count.mg-warn { color: #F5C77E; }
 .btn[disabled] { opacity: .5; cursor: not-allowed; }
+
+/* Nov 20, 2026: licenses in Admin › People and on the Account page. */
+.adm-license { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 6px 0 10px; }
+.adm-license select { padding: 6px 8px; border-radius: 8px; }
+.adm-warn { color: #F5C77E; }
+.acct-license { margin: 0 0 14px; }

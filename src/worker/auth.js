@@ -21,6 +21,7 @@ import { attention, attentionDismiss, playlistsRetry } from './attention.js';
 import { listsGet, listsSave, orderGet, orderSave } from './lists.js';
 import { historyGet, historyPut, historyKeySave, historyDevices, historySeal, profileHistory, clearAllHistory, discoverSave, tmdbSave } from './history.js';
 import { deviceBeta } from './beta.js';
+import { grantTrial, licenseFor } from './licenses.js';
 import { accountReports, accountReport, accountReportNote } from './reports.js';
 import { manage, catalogFor, profileSave, profileRemove, profilePin, profileVisibility, deviceSetProfiles, deviceStop, vaultKey, accountKeySave, deviceLogins, playlistsImport, playlistsAdopt } from './profiles.js';
 import {
@@ -118,6 +119,7 @@ async function userForEmail(env, email) {
       .bind(id, email, new Date().toISOString(), isAdminEmail(env, email) ? 'admin' : 'user').run();
     u = { id, status: 'active', role: isAdminEmail(env, email) ? 'admin' : 'user' };
     created = true;
+    await grantTrial(env, id); // every new account starts with a 1-month trial (Nov 20, 2026)
   } else if (u.role !== 'admin' && isAdminEmail(env, email)) {
     await env.DB.prepare("UPDATE users SET role = 'admin' WHERE id = ?1").bind(u.id).run();
   }
@@ -303,6 +305,7 @@ async function me(env, user) {
     watchHistory: Boolean(user.watch_history),
     devices: await devicesFor(env, user.id),
     deviceLimit: MAX_DEVICES,
+    license: await licenseFor(env, user.id),
     backups: await backupsFor(env, user.id),
     passkeys: passkeys.results.map((p) => ({ id: p.id, name: p.name, createdAt: p.created_at, lastUsed: p.last_used, unlocksLogins: vault.includes(p.id) })),
     sessions: sessions.results.map((s) => ({
@@ -361,6 +364,7 @@ async function deleteAccount(request, env, user) {
     env.DB.prepare('DELETE FROM device_playlists WHERE user_id = ?1').bind(user.id),
     env.DB.prepare('DELETE FROM account_playlists WHERE user_id = ?1').bind(user.id),
     env.DB.prepare('DELETE FROM devices WHERE user_id = ?1').bind(user.id),
+    env.DB.prepare('DELETE FROM licenses WHERE user_id = ?1').bind(user.id),
     env.DB.prepare('DELETE FROM link_codes WHERE user_id = ?1').bind(user.id),
     env.DB.prepare('DELETE FROM sign_in_links WHERE email = ?1').bind(user.email),
     // Reports stay for the bug history, no longer tied to the account (reports.js).

@@ -157,6 +157,14 @@
   function render() {
     var em = document.getElementById('acct-email');
     if (em) em.textContent = 'Signed in as ' + me.email + (me.admin ? ' · administrator' : '') + '. How you sign in, where you\'re signed in, and what your account keeps.';
+    // Nov 20, 2026: the account's license (every account starts with a 1-month trial).
+    var lic = document.getElementById('acct-license'), L = me.license;
+    if (lic && L && L.status !== 'none') {
+      var dd = function (ms) { return new Date(ms).toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' }); };
+      var k = L.kind === 'comp' ? 'Complimentary license' : L.kind === 'paid' ? 'Paid license' : 'Free trial';
+      lic.textContent = L.perpetual ? k + ': doesn\u2019t expire.' : L.status === 'expired' ? k + ': ended ' + dd(L.endsAt) + '.' : k + ': until ' + dd(L.endsAt) + '.';
+      lic.hidden = false;
+    }
     var ls = document.getElementById('locked-state');
     if (ls) {
       ls.innerHTML = '';
