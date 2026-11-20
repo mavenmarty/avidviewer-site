@@ -1,6 +1,7 @@
 // avidviewer.app: serves the static site and the small /api it needs.
 import { handleAccountApi } from './auth.js';
 import { handleTvApi } from './devices.js';
+import { githubWebhook } from './reports.js';
 
 // Phase 1: POST /api/notify stores a launch-news sign-up in D1.
 // Setup codes (Nov 15–16, 2026) are retired: /api/setup answers 410 and /setup/ goes to /playlists/.
@@ -82,6 +83,10 @@ export default {
       } catch (e) {
         console.error('account api failed', e);
         return json({ error: 'Something went wrong on our side. Please try again later.' }, 500);
+      }
+      // GitHub tells the site when an issue changes (reports.js), signed with GITHUB_WEBHOOK_SECRET.
+      if (url.pathname === '/api/github/webhook' && request.method === 'POST') {
+        try { return await githubWebhook(request, env); } catch (e) { console.error('webhook failed', e); return json({ error: 'Failed.' }, 500); }
       }
       if (url.pathname === '/api/notify') {
         if (request.method !== 'POST') return json({ error: 'Use POST.' }, 405);

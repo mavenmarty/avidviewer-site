@@ -19,7 +19,7 @@
     if (!rows.length) { var e = el('tr'); var td = el('td', 'soft', 'Nothing yet.'); td.colSpan = head.length; e.appendChild(td); t.appendChild(e); }
     rows.forEach(function (r) { var row = el('tr'); r.cells.forEach(function (c) { row.appendChild(el('td', null, c)); }); if (r.onclick) { row.tabIndex = 0; row.addEventListener('click', r.onclick); row.addEventListener('keydown', function (e) { if (e.key === 'Enter') r.onclick(); }); } t.appendChild(row); });
   }
-  var ACTIONS = { suspend: 'Suspended', unsuspend: 'Lifted suspension', 'delete': 'Deleted account', revoke_tv: 'Signed out device', resend_link: 'Sent sign-in link', end_sessions: 'Signed out browsers', note: 'Added note', beta_choose: 'Chose for the beta', beta_remove: 'Took out of the beta', beta_offer: 'Offered beta build' };
+  var ACTIONS = { suspend: 'Suspended', unsuspend: 'Lifted suspension', 'delete': 'Deleted account', revoke_tv: 'Signed out device', resend_link: 'Sent sign-in link', end_sessions: 'Signed out browsers', note: 'Added note', beta_choose: 'Chose for the beta', beta_remove: 'Took out of the beta', beta_offer: 'Offered beta build', report_add: 'Added a report to a bug', report_file: 'Filed a bug', report_not_app: 'Marked a report not an app problem', report_need_info: 'Asked for details', report_ignore: 'Ignored a report', report_undo: 'Undid an automatic match', report_reopen: 'Put a report back in the queue', bug_note: 'Changed what a bug says' };
 
   // ---------------------------------------------------------------- gate
   function start() {
@@ -49,7 +49,7 @@
   function tab(name) {
     document.querySelectorAll('[role=tab]').forEach(function (b) { b.setAttribute('aria-selected', String(b.dataset.tab === name)); });
     document.querySelectorAll('[data-panel]').forEach(function (p) { p.hidden = p.dataset.panel !== name; });
-    ({ dash: loadStats, people: loadUsers, audit: loadAudit, news: loadNews, beta: loadBeta })[name]();
+    ({ dash: loadStats, reports: loadReports, people: loadUsers, audit: loadAudit, news: loadNews, beta: loadBeta })[name]();
   }
   document.querySelectorAll('[role=tab]').forEach(function (b) { b.addEventListener('click', function () { tab(b.dataset.tab); }); });
 
@@ -197,6 +197,101 @@
     var name = $('adm-beta-build').selectedOptions[0].textContent.split(' · ')[0];
     if (!confirm('Offer ' + name + ' to every device in the beta?')) return;
     post('/api/admin/beta/offer', { tag: tag }).then(function (r) { if (!r._ok) alert(r.error || 'That didn\'t work.'); loadBeta(); });
+  });
+
+  // ---------------------------------------------------------------- reports (src/worker/reports.js)
+  var KIND = { crash: 'Crash report', playback: 'Playback log', security: 'Security alert' };
+  var BUGST = { open: 'Being fixed', need_info: 'Needs details', fixed: 'Fixed', closed: 'Closed' };
+  function rpAct(id, action, extra) {
+    var d = Object.assign({ id: id, action: action }, extra || {});
+    return post('/api/admin/reports/triage', d).then(function (r) {
+      if (!r._ok) { alert(r.error || 'That didn\'t work.'); return; }
+      if (r.openUrl) window.open(r.openUrl, '_blank', 'noopener');
+      loadReports();
+    });
+  }
+  function btn(text, cls, fn) { var b = el('button', 'btn ' + (cls || 'btn-ghost'), text); b.type = 'button'; b.addEventListener('click', fn); return b; }
+  function reportRow(r, auto) {
+    var box = el('div', 'adm-rp-row');
+    var head = el('div', 'adm-rp-top');
+    head.appendChild(el('strong', null, KIND[r.kind] || r.kind));
+    head.appendChild(el('span', 'soft', r.device + (r.email ? ' (' + r.email + ')' : '') + ' · ' + (r.deviceInfo || 'device not given') + ' · ' + r.appVersion + ' · ' + when(r.sentAt) + (r.source === 'relay' ? ' · by email relay' : '')));
+    box.appendChild(head);
+    box.appendChild(el('div', null, r.summary || r.title));
+    if (r.reopenedAt) box.appendChild(el('div', 'adm-rp-flag', 'Back from the account: “It’s still happening” (' + when(r.reopenedAt) + ')'));
+    if (r.bugs.length) box.appendChild(el('div', 'adm-rp-sugg', (auto ? 'Added by itself to ' : 'On ') + r.bugs.map(function (b) { return '#' + b.number + (b.title ? ' ' + b.title : ''); }).join(', ')));
+    else if (r.suggestions.length) box.appendChild(el('div', 'adm-rp-sugg', 'Suggested: ' + r.suggestions.map(function (b) { return '#' + b.bug + (b.title ? ' ' + b.title : ''); }).join(', ')));
+    else if (r.signatures.length && r.signatures.every(function (k) { return k.indexOf('provider|') === 0; })) box.appendChild(el('div', 'adm-rp-sugg', 'Suggested: not an app problem (only provider or network trouble)'));
+    var acts = el('div', 'adm-rp-acts');
+    if (auto) {
+      acts.appendChild(btn('Undo', 'btn-ghost', function () { rpAct(r.id, 'undo'); }));
+    } else {
+      if (r.suggestions.length) {
+        var nums = r.suggestions.map(function (b) { return b.bug; });
+        acts.appendChild(btn('Add to #' + nums.join(', #'), 'btn-primary', function () { rpAct(r.id, 'add', { bugs: nums }); }));
+      }
+      acts.appendChild(btn('Add to bug…', 'btn-ghost', function () {
+        var n = prompt('Add ' + r.id + ' to which bug? (number, or several separated by commas)'); if (!n) return;
+        rpAct(r.id, 'add', { bugs: n.split(/[ ,#]+/).filter(Boolean).map(Number) });
+      }));
+      acts.appendChild(btn('File new bug', 'btn-ghost', function () {
+        var t = prompt('Title for the new bug', r.summary || r.title); if (t == null) return;
+        rpAct(r.id, 'file', { title: t });
+      }));
+      acts.appendChild(btn('Not an app problem', 'btn-ghost', function () { rpAct(r.id, 'not_app'); }));
+      acts.appendChild(btn('Need details', 'btn-ghost', function () { rpAct(r.id, 'need_info'); }));
+      acts.appendChild(btn('Ignore', 'btn-ghost', function () { if (confirm('Ignore ' + r.id + '? It disappears from the account\'s Reports page.')) rpAct(r.id, 'ignore'); }));
+    }
+    acts.appendChild(btn('Open', 'btn-ghost', function () { showReport(r.id); }));
+    box.appendChild(acts);
+    return box;
+  }
+  function showReport(id) {
+    get('/api/admin/reports/item?id=' + encodeURIComponent(id)).then(function (r) {
+      var c = $('adm-rp-item'); c.innerHTML = ''; c.hidden = false;
+      c.appendChild(el('h2', null, r.id + ' · ' + (KIND[r.kind] || r.kind)));
+      c.appendChild(el('p', 'soft', 'Keys: ' + (r.signatures.join(' · ') || 'none') + (r.bugs.length ? ' · on #' + r.bugs.map(function (b) { return b.number; }).join(', #') : '')));
+      (r.notes || []).forEach(function (n) { c.appendChild(el('p', null, 'Note from the account (' + when(n.at) + '): ' + n.text)); });
+      if (r.state !== 'new') c.appendChild(btn('Put back in the queue', 'btn-ghost', function () { rpAct(r.id, 'reopen'); }));
+      var pre = el('pre', 'adm-rp-pre', r.body); c.appendChild(pre);
+      c.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  }
+  function loadReports() {
+    get('/api/admin/reports').then(function (d) {
+      if (!d._ok) { $('adm-rp-new').textContent = d.error || 'Couldn\'t load reports.'; return; }
+      $('adm-rp-sync').textContent = 'GitHub last read ' + (d.syncedAt ? when(d.syncedAt) : 'never') + '. ' +
+        (d.webhook ? 'The webhook updates bugs as they change.' : 'No webhook yet (GITHUB_WEBHOOK_SECRET): bugs are read every few minutes while this page or a Reports page is open.') + ' ' +
+        (d.canFile ? 'File new bug files it on GitHub directly.' : 'File new bug opens GitHub\'s new-issue page, filled in (no GITHUB_TOKEN); the report links itself once it\'s submitted.');
+      $('adm-rp-new-h').textContent = 'New · ' + d.queue.length;
+      var nb = $('adm-rp-new'); nb.innerHTML = '';
+      if (!d.queue.length) nb.appendChild(el('p', 'soft', 'Nothing waiting.'));
+      d.queue.forEach(function (r) { nb.appendChild(reportRow(r, false)); });
+      $('adm-rp-auto-h').textContent = 'Added by themselves (last 24 hours) · ' + d.auto.length;
+      var ab = $('adm-rp-auto'); ab.innerHTML = '';
+      if (!d.auto.length) ab.appendChild(el('p', 'soft', 'None.'));
+      d.auto.forEach(function (r) { ab.appendChild(reportRow(r, true)); });
+      var bb = $('adm-rp-bugs'); bb.innerHTML = '';
+      if (!d.bugs.length) bb.appendChild(el('p', 'soft', 'No bugs read from GitHub yet.'));
+      d.bugs.forEach(function (b) {
+        var row = el('div', 'adm-rp-bug');
+        var top = el('div', 'adm-rp-top');
+        var a = el('a', null, '#' + b.number); a.href = 'https://github.com/mavenmarty/avid-viewer/issues/' + b.number; a.target = '_blank'; a.rel = 'noopener';
+        top.appendChild(a); top.appendChild(el('strong', null, b.title));
+        top.appendChild(el('span', 'adm-rp-st', (BUGST[b.status] || b.status) + (b.fixed_in ? ' in ' + b.fixed_in : '')));
+        row.appendChild(top);
+        row.appendChild(el('div', 'soft', b.reports + (b.reports === 1 ? ' report' : ' reports') + ' · ' + b.devices + (b.devices === 1 ? ' device' : ' devices') + (b.latest ? ' · latest from ' + b.latest : '')));
+        var note = el('textarea'); note.rows = 2; note.value = b.public_note || ''; note.placeholder = 'What the account\'s Reports page says (“What we found”). Empty: the bug\'s title.';
+        note.setAttribute('aria-label', 'What people see about bug ' + b.number);
+        var save = btn('Save', 'btn-ghost', function () { post('/api/admin/bugs/note', { number: b.number, note: note.value }).then(function (r) { save.textContent = r._ok ? 'Saved' : 'Failed'; }); });
+        row.appendChild(note); row.appendChild(save);
+        bb.appendChild(row);
+      });
+    });
+  }
+  $('adm-rp-sync-now').addEventListener('click', function () {
+    var b = $('adm-rp-sync-now'); b.disabled = true;
+    post('/api/admin/bugs/sync', {}).then(function (r) { b.disabled = false; if (r.error) alert(r.error); loadReports(); });
   });
 
   function loadNews() {

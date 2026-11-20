@@ -20,6 +20,7 @@ import { handleListsTvApi } from './lists.js';
 import { handleHistoryTvApi } from './history.js';
 import { json, randomToken, sha256hex, ipOf, body } from './auth.js';
 import { betaFor } from './beta.js';
+import { tvReport, tvClaim as tvReportsClaim, wantsLog } from './reports.js';
 
 const ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // same as setup codes: no 0/O, 1/I/L
 const TV_CODE_TTL = 10 * 60 * 1000;
@@ -134,7 +135,7 @@ async function tvMe(request, env) {
   const version = clip(request.headers.get('x-app-version') || '', 30);
   await env.DB.prepare('UPDATE devices SET last_seen = ?1, app_version = COALESCE(NULLIF(?2, \'\'), app_version) WHERE id = ?3')
     .bind(Date.now(), version, d.id).run();
-  return json({ email: d.email, name: d.name, deviceId: d.id, beta: await betaFor(env, d.id) });
+  return json({ email: d.email, name: d.name, deviceId: d.id, beta: await betaFor(env, d.id), sendLog: await wantsLog(env, d.id) });
 }
 
 // ---------------------------------------------------------------- cloud backups (TV side)
@@ -251,6 +252,12 @@ export async function handleTvApi(request, env, realUrl) {
   if (p === '/api/tv/backups') return request.method === 'GET' ? tvBackupList(request, env) : json({ error: 'Use GET.' }, 405);
   if (p === '/api/tv/backup' && request.method === 'GET') return tvBackupDownload(request, env, url);
   if (request.method !== 'POST') return json({ error: 'Use POST.' }, 405);
+  // Reports (reports.js): from linked devices and from devices that aren't linked yet (and the email relay).
+  if (p === '/api/tv/reports') {
+    const d = await deviceFor(request, env);
+    return tvReport(request, env, d && d.status === 'active' ? d : null);
+  }
+  if (p === '/api/tv/reports/claim') return tvReportsClaim(request, env, await deviceFor(request, env));
   switch (p) {
     case '/api/tv/link/start': return tvStart(request, env, url);
     case '/api/tv/link/poll': return tvPoll(request, env);

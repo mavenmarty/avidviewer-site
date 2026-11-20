@@ -14,6 +14,7 @@
   <div id="adm" hidden>
     <nav class="adm-tabs" role="tablist">
       <button type="button" role="tab" data-tab="dash" aria-selected="true">Dashboard</button>
+      <button type="button" role="tab" data-tab="reports">Reports</button>
       <button type="button" role="tab" data-tab="people">People</button>
       <button type="button" role="tab" data-tab="audit">Audit log</button>
       <button type="button" role="tab" data-tab="news">Launch news</button>
@@ -25,6 +26,19 @@
       <div class="adm-two">
         <div class="setup-card"><h2>New accounts, last 30 days</h2><div class="adm-bars" id="adm-daily"></div></div>
         <div class="setup-card"><h2>Linked devices by app version</h2><table class="adm-table" id="adm-versions"></table></div>
+      </div>
+    </section>
+
+    <section data-panel="reports" hidden>
+      <p class="soft" id="adm-rp-intro">Every report from every device, in one queue. A report that certainly matches an open bug is added to it by itself; the rest wait here. People see each step on their Reports page (no emails).</p>
+      <p class="fineprint" id="adm-rp-sync"></p>
+      <div class="adm-rp">
+        <div class="adm-rp-col">
+          <div class="setup-card adm-rp-card"><h2 id="adm-rp-new-h">New</h2><div id="adm-rp-new"></div></div>
+          <div class="setup-card adm-rp-card"><h2 id="adm-rp-auto-h">Added by themselves (last 24 hours)</h2><div id="adm-rp-auto"></div></div>
+          <div class="setup-card adm-rp-card" id="adm-rp-item" hidden></div>
+        </div>
+        <div class="setup-card adm-rp-card"><div class="adm-rp-bugs-head"><h2>Bugs</h2><button class="btn btn-ghost" type="button" id="adm-rp-sync-now">Read GitHub now</button></div><div id="adm-rp-bugs"></div></div>
       </div>
     </section>
 

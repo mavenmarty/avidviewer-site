@@ -10,6 +10,7 @@
 import { json, body, randomToken, sendSignInLink } from './auth.js';
 import { backupsFor } from './devices.js';
 import { adminBeta, adminBetaChoose, adminBetaOffer } from './beta.js';
+import { adminReports, adminReport, adminTriage, adminBugNote, adminBugSync } from './reports.js';
 
 const DAY = 24 * 3600 * 1000;
 
@@ -205,6 +206,9 @@ async function deleteUser(request, env, admin) {
     env.DB.prepare('DELETE FROM link_codes WHERE user_id = ?1').bind(u.id),
     env.DB.prepare('DELETE FROM admin_notes WHERE user_id = ?1').bind(u.id),
     env.DB.prepare('DELETE FROM sign_in_links WHERE email = ?1').bind(u.email),
+    // Reports stay for the bug history, no longer tied to the account (reports.js).
+    env.DB.prepare('UPDATE reports SET user_id = NULL, device_id = NULL WHERE user_id = ?1').bind(u.id),
+    env.DB.prepare('DELETE FROM report_notes WHERE user_id = ?1').bind(u.id),
     env.DB.prepare('DELETE FROM users WHERE id = ?1').bind(u.id),
   ]);
   await audit(env, admin, 'delete', u, null, reason);
@@ -225,6 +229,8 @@ export async function handleAdminApi(request, env, url, user) {
       case '/api/admin/audit': return auditLog(env);
       case '/api/admin/launch-news': return launchNews(env, url);
       case '/api/admin/beta': return adminBeta(env);
+      case '/api/admin/reports': return adminReports(env);
+      case '/api/admin/reports/item': return adminReport(env, url);
     }
     return json({ error: 'Not found.' }, 404);
   }
@@ -237,6 +243,9 @@ export async function handleAdminApi(request, env, url, user) {
     case '/api/admin/delete': return deleteUser(request, env, user);
     case '/api/admin/beta/choose': return adminBetaChoose(request, env, user, audit, url);
     case '/api/admin/beta/offer': return adminBetaOffer(request, env, user, audit);
+    case '/api/admin/reports/triage': return adminTriage(request, env, user, audit);
+    case '/api/admin/bugs/note': return adminBugNote(request, env, user, audit);
+    case '/api/admin/bugs/sync': return adminBugSync(env);
   }
   return json({ error: 'Not found.' }, 404);
 }

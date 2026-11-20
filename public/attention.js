@@ -4,7 +4,7 @@
   'use strict';
   var box = document.getElementById('mg-attention');
   if (!box) return;
-  var TAB = { playlists: '/playlists/', profiles: '/profiles/', devices: '/devices/', backups: '/backups/', account: '/account/' };
+  var TAB = { playlists: '/playlists/', profiles: '/profiles/', devices: '/devices/', backups: '/backups/', reports: '/reports/', account: '/account/' };
   var here = Object.keys(TAB).find(function (k) { return TAB[k] === location.pathname; }) || '';
   var open = false, showGone = false, last = { items: [], dismissed: [] };
   function post(path, data) {

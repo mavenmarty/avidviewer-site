@@ -21,6 +21,7 @@ import { attention, attentionDismiss, playlistsRetry } from './attention.js';
 import { listsGet, listsSave, orderGet, orderSave } from './lists.js';
 import { historyGet, historyPut, historyKeySave, historyDevices, historySeal, profileHistory, clearAllHistory, discoverSave, tmdbSave } from './history.js';
 import { deviceBeta } from './beta.js';
+import { accountReports, accountReport, accountReportNote } from './reports.js';
 import { manage, catalogFor, profileSave, profileRemove, profilePin, profileVisibility, deviceSetProfiles, deviceStop, vaultKey, accountKeySave, deviceLogins, playlistsImport, playlistsAdopt } from './profiles.js';
 import {
   generateRegistrationOptions, verifyRegistrationResponse,
@@ -361,6 +362,9 @@ async function deleteAccount(request, env, user) {
     env.DB.prepare('DELETE FROM devices WHERE user_id = ?1').bind(user.id),
     env.DB.prepare('DELETE FROM link_codes WHERE user_id = ?1').bind(user.id),
     env.DB.prepare('DELETE FROM sign_in_links WHERE email = ?1').bind(user.email),
+    // Reports stay for the bug history, no longer tied to the account (reports.js).
+    env.DB.prepare('UPDATE reports SET user_id = NULL, device_id = NULL WHERE user_id = ?1').bind(user.id),
+    env.DB.prepare('DELETE FROM report_notes WHERE user_id = ?1').bind(user.id),
     env.DB.prepare('DELETE FROM users WHERE id = ?1').bind(user.id),
   ]);
   return json({ ok: true }, 200, { 'set-cookie': sessionCookie('', 0) });
@@ -381,7 +385,7 @@ export async function handleAccountApi(request, env, realUrl) {
     // (wrangler dev rewrites the Origin header to the real site's address, so that one is accepted locally too.)
     const origin = request.headers.get('origin');
     if (origin !== url.origin && origin !== realUrl.origin) return json({ error: 'Not allowed.' }, 403);
-  } else if (!(request.method === 'GET' && (p === '/api/me' || p === '/api/account/manage' || p === '/api/account/catalog' || p === '/api/account/playlists/vault' || p === '/api/account/device-logins' || p === '/api/account/attention' || p === '/api/account/lists' || p === '/api/account/order' || p === '/api/account/history' || p === '/api/account/history/devices' || p === '/api/account/profiles/visibility' || p.startsWith('/api/admin/')))) {
+  } else if (!(request.method === 'GET' && (p === '/api/me' || p === '/api/account/manage' || p === '/api/account/catalog' || p === '/api/account/playlists/vault' || p === '/api/account/device-logins' || p === '/api/account/attention' || p === '/api/account/lists' || p === '/api/account/order' || p === '/api/account/history' || p === '/api/account/history/devices' || p === '/api/account/profiles/visibility' || p === '/api/account/reports' || p === '/api/account/reports/item' || p.startsWith('/api/admin/')))) {
     return json({ error: 'Use POST.' }, 405);
   }
 
@@ -443,6 +447,10 @@ export async function handleAccountApi(request, env, realUrl) {
     case '/api/account/devices/rename': return deviceRename(request, env, user);
     case '/api/account/devices/remove': return deviceRemove(request, env, user);
     case '/api/account/devices/beta': return deviceBeta(request, env, user);
+    case '/api/account/reports': return accountReports(env, user);
+    case '/api/account/reports/item': return accountReport(env, user, url);
+    case '/api/account/reports/note': return accountReportNote(request, env, user, false);
+    case '/api/account/reports/still': return accountReportNote(request, env, user, true);
     case '/api/account/backups/delete': return backupDelete(request, env, user);
     case '/api/account/backups/pin': return backupPin(request, env, user);
     case '/api/link/lookup': return linkLookup(request, env);

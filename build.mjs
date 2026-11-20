@@ -176,6 +176,7 @@ async function main() {
     const path = name === 'index' ? '/' : `/${name}/`;
     // Launch news (the /#notify form and notify.js) is parked (owner, Nov 19); /api/notify still answers.
     const scripts = name === 'playlists' || name === 'profiles' || name === 'devices' ? '<script src="/js/webauthn.js" defer></script><script src="/playlists.js" defer></script><script src="/manage.js" defer></script><script src="/attention.js" defer></script>'
+      : name === 'reports' ? '<script src="/reports.js" defer></script><script src="/attention.js" defer></script>'
       : name === 'signin' || name === 'account' || name === 'backups' || name === 'link' ? '<script src="/js/webauthn.js" defer></script><script src="/account.js" defer></script>' + (name === 'account' || name === 'backups' ? '<script src="/attention.js" defer></script>' : '')
       : name === 'admin' ? '<script src="/js/webauthn.js" defer></script><script src="/admin.js" defer></script>' : '';
     const html = layout({ ...meta, path, body, scripts });
