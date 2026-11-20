@@ -1577,7 +1577,17 @@
   // ------------------------------------------------------------ Devices
   function devicesPage() {
     var b = body('Devices', 'Choose which profiles appear on each device. Its Who\'s watching? screen shows exactly these.');
-    var addA = el('a', 'btn btn-primary', '＋ Add a device'); addA.href = '/link/'; b.appendChild(addA);
+    // Nov 20, 2026: at most 4 devices per account.
+    var limit = S.deviceLimit || 4, full = S.devices.length >= limit;
+    var count = el('p', 'mg-count' + (full ? ' mg-warn' : ''), S.devices.length + ' of ' + limit + ' devices linked' +
+      (full ? '. That\'s the most an account can have: remove one you no longer use to add another.' : '.'));
+    count.id = 'device-count';
+    if (full) {
+      var addD = el('button', 'btn btn-primary', '＋ Add a device'); addD.type = 'button'; addD.disabled = true; addD.title = 'Remove a device first';
+      add(b, count, addD);
+    } else {
+      var addA = el('a', 'btn btn-primary', '＋ Add a device'); addA.href = '/link/'; add(b, count, addA);
+    }
     if (!S.devices.length) b.appendChild(el('p', 'soft', 'No devices linked yet. Open Avid Viewer on a TV and enter the code it shows at avidviewer.app/link.'));
     S.devices.forEach(function (d) {
       var c = el('section', 'mg-card');
@@ -1585,14 +1595,14 @@
       var isAway = d.lastSeen && Date.now() - d.lastSeen > 7 * 86400000;
       add(head, add(el('div'), add(el('h3', null, d.name), isAway ? el('span', 'mg-chip mg-away', 'Away') : null),
         el('p', 'soft', [d.model, d.appVersion ? 'Avid Viewer ' + d.appVersion : '', ago(d.lastSeen)].filter(Boolean).join(' · ')),
-        isAway ? el('p', 'fineprint', 'Changes wait for it and arrive when Avid Viewer is opened on it again. If you no longer use it, remove it.') : null),
+        isAway ? el('p', 'fineprint', 'Changes wait for it and arrive when Avid Viewer is opened on it again. If you no longer use it, remove it' + (full ? ' to make room for another device.' : '.')) : null),
         add(el('div', 'row-btns'),
           btn('Rename', 'linkish', async function () {
             var n = prompt('New name for ' + d.name, d.name); if (!n || !n.trim()) return;
             var r = await post('/api/account/devices/rename', { id: d.id, name: n.trim() }); say(r._ok ? '' : r.error, !r._ok); load();
           }),
           btn('Remove', 'linkish', async function () {
-            if (!confirm('Remove ' + d.name + ' from your account? It\'s signed out and its playlists from the account are removed. Its backup is kept for 30 days.')) return;
+            if (!confirm('Remove ' + d.name + ' from your account? It\'s signed out and asks to be linked again, and its playlists from the account are removed. Its backup is kept for 30 days. This frees a place for another device.')) return;
             await post('/api/account/devices/remove', { id: d.id }); load();
           })));
       c.appendChild(head);

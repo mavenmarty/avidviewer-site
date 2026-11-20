@@ -30,7 +30,7 @@ import {
 import { isoBase64URL } from '@simplewebauthn/server/helpers';
 import { mailConfigured, sendMail } from './mail.js';
 import { handleAdminApi } from './admin.js';
-import { linkLookup, linkApprove, linkSetupToken, devicesFor, deviceRename, deviceRemove, backupsFor, backupDelete, backupPin } from './devices.js';
+import { MAX_DEVICES, linkLookup, linkApprove, linkSetupToken, devicesFor, deviceRename, deviceRemove, backupsFor, backupDelete, backupPin } from './devices.js';
 
 const LINK_TTL = 15 * 60 * 1000;
 const SESSION_TTL = 30 * 24 * 3600 * 1000;
@@ -302,6 +302,7 @@ async function me(env, user) {
     adminReady: user.role === 'admin' && user.session_method === 'passkey',
     watchHistory: Boolean(user.watch_history),
     devices: await devicesFor(env, user.id),
+    deviceLimit: MAX_DEVICES,
     backups: await backupsFor(env, user.id),
     passkeys: passkeys.results.map((p) => ({ id: p.id, name: p.name, createdAt: p.created_at, lastUsed: p.last_used, unlocksLogins: vault.includes(p.id) })),
     sessions: sessions.results.map((s) => ({

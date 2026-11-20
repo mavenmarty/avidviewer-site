@@ -595,3 +595,12 @@ button.btn-ghost { background: transparent; color: var(--text); }
 .rf-form .btn { align-self: flex-start; }
 .rf-done h2 { margin: 0; font-size: 24px; }
 .rf-done p { margin: 0; color: var(--soft); }
+/* Nov 20, 2026: device limit (4 per account) on Add a device and Devices. */
+.link-full { display: flex; flex-direction: column; gap: 10px; padding: 12px 14px; border: 1px solid rgba(245, 199, 126, .35); border-radius: 10px; background: rgba(245, 199, 126, .06); }
+.link-full .rows li { flex-wrap: nowrap; align-items: center; gap: 12px; }
+.link-full .lf-info { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+.link-full .lf-info .soft { font-size: 13px; }
+.link-full .rows li button { flex: none; }
+.mg-count { margin: 0 0 10px; color: var(--soft); font-size: 14px; }
+.mg-count.mg-warn { color: #F5C77E; }
+.btn[disabled] { opacity: .5; cursor: not-allowed; }

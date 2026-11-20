@@ -26,6 +26,19 @@ const ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // same as setup codes: no 0
 const TV_CODE_TTL = 10 * 60 * 1000;
 const SETUP_LINK_TTL = 30 * 60 * 1000;
 const STARTS_PER_IP = 20; // per hour
+/** Nov 20, 2026 (owner): an account can have at most 4 linked devices. Remove one on the Devices page to add another. */
+export const MAX_DEVICES = 4;
+const LIMIT_TEXT = `Your account already has ${MAX_DEVICES} devices, the most it can have. Remove one you no longer use to add this one.`;
+
+export async function deviceCount(env, userId) {
+  const r = await env.DB.prepare('SELECT COUNT(*) AS n FROM devices WHERE user_id = ?1 AND revoked_at IS NULL').bind(userId).first();
+  return r?.n || 0;
+}
+
+/** 409 for the website: the account is full. Carries its devices so the page can offer Remove right there. */
+async function limitReached(env, userId) {
+  return json({ error: LIMIT_TEXT, code: 'device_limit', limit: MAX_DEVICES, devices: await devicesFor(env, userId) }, 409);
+}
 
 function newUserCode() {
   const out = [];
@@ -44,13 +57,16 @@ export function normalizeCode(input) {
 
 function clip(v, n) { return typeof v === 'string' ? v.trim().slice(0, n) : ''; }
 
+/** Adds a device to the account, or returns null when the account already has MAX_DEVICES (checked in the same statement). */
 async function newDevice(env, userId, info) {
   const token = randomToken();
   const now = Date.now();
   const id = randomToken(12);
-  await env.DB.prepare(
-    'INSERT INTO devices (id, user_id, token_hash, name, model, app_version, created_at, last_seen) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7)'
-  ).bind(id, userId, await sha256hex(token), info.name || info.model || 'Device', info.model || null, info.appVersion || null, now).run();
+  const r = await env.DB.prepare(
+    `INSERT INTO devices (id, user_id, token_hash, name, model, app_version, created_at, last_seen)
+     SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7 WHERE (SELECT COUNT(*) FROM devices WHERE user_id = ?2 AND revoked_at IS NULL) < ?8`
+  ).bind(id, userId, await sha256hex(token), info.name || info.model || 'Device', info.model || null, info.appVersion || null, now, MAX_DEVICES).run();
+  if (!r.meta?.changes) return null;
   const u = await env.DB.prepare('SELECT email FROM users WHERE id = ?1').bind(userId).first();
   return { token, deviceId: id, name: info.name || info.model || 'Device', email: u?.email || '' };
 }
@@ -103,14 +119,21 @@ async function tvPoll(request, env) {
   if (!code) return json({ status: 'expired' }, 400);
   const hash = await sha256hex(code);
   const now = Date.now();
-  const row = await env.DB.prepare("SELECT id, status, user_id, device_name, device_model, app_version, expires_at FROM link_codes WHERE kind = 'tv' AND secret_hash = ?1")
+  const row = await env.DB.prepare("SELECT id, status, user_id, device_name, device_model, app_version, expires_at, full_at FROM link_codes WHERE kind = 'tv' AND secret_hash = ?1")
     .bind(hash).first();
   if (!row || row.status === 'used' || row.expires_at < now) return json({ status: 'expired' });
   await env.DB.prepare('UPDATE link_codes SET last_poll = ?1 WHERE id = ?2').bind(now, row.id).run();
-  if (row.status !== 'approved') return json({ status: 'pending' });
+  // full: the code was entered on an account that already has MAX_DEVICES (1.22.0 shows it; older versions just wait).
+  if (row.status !== 'approved') return json(row.full_at ? { status: 'pending', full: true, limit: MAX_DEVICES } : { status: 'pending' });
   const used = await env.DB.prepare("UPDATE link_codes SET status = 'used' WHERE id = ?1 AND status = 'approved'").bind(row.id).run();
   if (!used.meta?.changes) return json({ status: 'expired' });
   const d = await newDevice(env, row.user_id, { name: row.device_name, model: row.device_model, appVersion: row.app_version });
+  if (!d) {
+    // The account filled up between Add this device and now (two approved at once): the code waits again, and the
+    // website says why the next time it's entered.
+    await env.DB.prepare("UPDATE link_codes SET status = 'pending', user_id = NULL, full_at = ?2 WHERE id = ?1").bind(row.id, now).run();
+    return json({ status: 'pending', full: true, limit: MAX_DEVICES });
+  }
   return json({ status: 'approved', ...d });
 }
 
@@ -122,9 +145,12 @@ async function tvClaim(request, env) {
   const row = await env.DB.prepare("SELECT id, user_id, expires_at, status FROM link_codes WHERE kind = 'setup' AND secret_hash = ?1")
     .bind(await sha256hex(token)).first();
   if (!row || row.status !== 'approved' || row.expires_at < now) return json({ error: 'This setup code can no longer link a device. Link it in Settings › Account instead.' }, 410);
+  if (await deviceCount(env, row.user_id) >= MAX_DEVICES) return json({ error: `This account already has ${MAX_DEVICES} devices. Remove one at avidviewer.app/devices, then link this one in Settings › Account.`, code: 'device_limit' }, 409);
   const used = await env.DB.prepare("UPDATE link_codes SET status = 'used' WHERE id = ?1 AND status = 'approved'").bind(row.id).run();
   if (!used.meta?.changes) return json({ error: 'This setup code already linked a device.' }, 410);
-  return json({ status: 'approved', ...(await newDevice(env, row.user_id, tvInfo(b))) });
+  const d = await newDevice(env, row.user_id, tvInfo(b));
+  if (!d) return json({ error: `This account already has ${MAX_DEVICES} devices. Remove one at avidviewer.app/devices, then link this one in Settings › Account.`, code: 'device_limit' }, 409);
+  return json({ status: 'approved', ...d });
 }
 
 async function tvMe(request, env) {
@@ -292,13 +318,18 @@ export async function linkApprove(request, env, user) {
   const b = await body(request);
   const row = await pendingTv(env, b?.code);
   if (!row) return json({ error: "That code wasn't found. Codes last 10 minutes: check the device for the current one." }, 404);
+  if (await deviceCount(env, user.id) >= MAX_DEVICES) {
+    await env.DB.prepare('UPDATE link_codes SET full_at = ?1 WHERE id = ?2').bind(Date.now(), row.id).run();
+    return limitReached(env, user.id);
+  }
   const name = clip(b?.name, 60) || row.device_name || row.device_model || 'Device';
-  await env.DB.prepare("UPDATE link_codes SET status = 'approved', user_id = ?1, device_name = ?2 WHERE id = ?3 AND status = 'pending'")
+  await env.DB.prepare("UPDATE link_codes SET status = 'approved', user_id = ?1, device_name = ?2, full_at = NULL WHERE id = ?3 AND status = 'pending'")
     .bind(user.id, name, row.id).run();
   return json({ ok: true, name });
 }
 
 export async function linkSetupToken(env, user) {
+  if (await deviceCount(env, user.id) >= MAX_DEVICES) return limitReached(env, user.id);
   const token = randomToken();
   const now = Date.now();
   await env.DB.prepare(
