@@ -8,6 +8,7 @@
     return fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin', body: JSON.stringify(data || {}) })
       .then(function (r) { return r.json().catch(function () { return {}; }).then(function (d) { d._ok = r.ok; d._status = r.status; return d; }); });
   }
+  function plural(n, w) { return n + ' ' + w + (n === 1 ? '' : 's'); }
   function when(v) {
     if (!v) return '—';
     var d = new Date(typeof v === 'number' ? v : Date.parse(v));
@@ -75,8 +76,10 @@
   $('adm-status').addEventListener('change', loadUsers);
   function loadUsers() {
     get('/api/admin/users?q=' + encodeURIComponent($('adm-q').value) + '&status=' + $('adm-status').value).then(function (d) {
-      table($('adm-users'), ['Email', 'Joined', 'Last sign-in', 'Devices', 'Status'], (d.users || []).map(function (u) {
-        return { cells: [u.email + (u.role === 'admin' ? ' (admin)' : ''), when(u.createdAt), when(u.lastSignIn), String(u.tvs), u.status], onclick: function () { loadUser(u.id); } };
+      table($('adm-users'), ['Email', 'Joined', 'Last sign-in', 'Devices', 'Playlists', 'Status'], (d.users || []).map(function (u) {
+        // Playlists: in the account, plus "+N on devices" typed on a device and never added to the account.
+        var pl = String(u.playlists || 0) + (u.deviceOnlyPlaylists ? ' + ' + u.deviceOnlyPlaylists + ' on devices' : '');
+        return { cells: [u.email + (u.role === 'admin' ? ' (admin)' : ''), when(u.createdAt), when(u.lastSignIn), String(u.tvs), pl, u.status], onclick: function () { loadUser(u.id); } };
       }));
     });
   }
@@ -87,7 +90,7 @@
       if (!d._ok) { box.appendChild(el('p', 'soft', d.error || 'Not found.')); return; }
       var u = d.user;
       box.appendChild(el('h2', null, u.email));
-      box.appendChild(el('p', 'soft', [u.status === 'suspended' ? 'SUSPENDED' : 'Active', u.role === 'admin' ? 'administrator' : '', 'joined ' + when(u.createdAt), 'last sign-in ' + when(u.lastSignIn), 'watch history ' + (u.watchHistory ? 'on' : 'off')].filter(Boolean).join(' · ')));
+      box.appendChild(el('p', 'soft', [u.status === 'suspended' ? 'SUSPENDED' : 'Active', u.role === 'admin' ? 'administrator' : '', 'joined ' + when(u.createdAt), 'last sign-in ' + when(u.lastSignIn), plural(u.playlists || 0, 'playlist') + ' in the account' + (u.deviceOnlyPlaylists ? ' + ' + u.deviceOnlyPlaylists + ' only on devices' : ''), 'watch history ' + (u.watchHistory ? 'on' : 'off')].filter(Boolean).join(' · ')));
 
       var acts = el('div', 'btn-row');
       function act(label, cls, fn) { var b = el('button', 'btn ' + cls, label); b.type = 'button'; b.addEventListener('click', fn); acts.appendChild(b); }

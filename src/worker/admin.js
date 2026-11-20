@@ -67,17 +67,24 @@ async function users(env, url) {
   if (status === 'suspended' || status === 'active') { where.push(`u.status = ?${args.length + 1}`); args.push(status); }
   const rows = (await env.DB.prepare(
     `SELECT u.id, u.email, u.created_at, u.last_sign_in, u.role, u.status,
-            (SELECT COUNT(*) FROM devices d WHERE d.user_id = u.id AND d.revoked_at IS NULL) AS tvs
+            (SELECT COUNT(*) FROM devices d WHERE d.user_id = u.id AND d.revoked_at IS NULL) AS tvs,
+            -- Nov 20: playlists in the account (not being removed), and ones typed on a linked device but never added to it
+            (SELECT COUNT(*) FROM account_playlists p WHERE p.user_id = u.id AND p.removing = 0) AS playlists,
+            (SELECT COUNT(*) FROM device_playlists dp JOIN devices dv ON dv.id = dp.device_id AND dv.revoked_at IS NULL
+              WHERE dp.user_id = u.id AND dp.remote_id IS NULL) AS device_only
        FROM users u ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
       ORDER BY u.created_at DESC LIMIT 200`
   ).bind(...args).all()).results;
-  return json({ users: rows.map((u) => ({ id: u.id, email: u.email, createdAt: u.created_at, lastSignIn: u.last_sign_in, role: u.role, status: u.status, tvs: u.tvs })) });
+  return json({ users: rows.map((u) => ({ id: u.id, email: u.email, createdAt: u.created_at, lastSignIn: u.last_sign_in, role: u.role, status: u.status, tvs: u.tvs, playlists: u.playlists, deviceOnlyPlaylists: u.device_only })) });
 }
 
 async function userDetail(env, url) {
   const u = await target(env, url.searchParams.get('id'));
   if (!u) return json({ error: 'No such account.' }, 404);
   const all = (sql) => env.DB.prepare(sql).bind(u.id).all().then((r) => r.results);
+  const counts = await env.DB.prepare(`SELECT (SELECT COUNT(*) FROM account_playlists p WHERE p.user_id = ?1 AND p.removing = 0) AS playlists,
+            (SELECT COUNT(*) FROM device_playlists dp JOIN devices dv ON dv.id = dp.device_id AND dv.revoked_at IS NULL
+              WHERE dp.user_id = ?1 AND dp.remote_id IS NULL) AS device_only`).bind(u.id).first();
   const [devices, sessions, passkeys, notes, log] = await Promise.all([
     all('SELECT id, name, model, app_version, created_at, last_seen, revoked_at FROM devices WHERE user_id = ?1 ORDER BY revoked_at IS NOT NULL, last_seen DESC'),
     all('SELECT label, method, created_at, last_seen, expires_at FROM sessions WHERE user_id = ?1 ORDER BY last_seen DESC'),
@@ -86,7 +93,7 @@ async function userDetail(env, url) {
     all('SELECT at, admin_email, action, detail, reason FROM admin_audit WHERE target_id = ?1 ORDER BY at DESC LIMIT 50'),
   ]);
   return json({
-    user: { id: u.id, email: u.email, status: u.status, role: u.role, createdAt: u.created_at, lastSignIn: u.last_sign_in, watchHistory: Boolean(u.watch_history) },
+    user: { id: u.id, email: u.email, status: u.status, role: u.role, createdAt: u.created_at, lastSignIn: u.last_sign_in, watchHistory: Boolean(u.watch_history), playlists: counts?.playlists || 0, deviceOnlyPlaylists: counts?.device_only || 0 },
     devices: devices.map((d) => ({ id: d.id, name: d.name, model: d.model, appVersion: d.app_version, linkedAt: d.created_at, lastSeen: d.last_seen, removedAt: d.revoked_at })),
     sessions: sessions.filter((s) => s.expires_at > Date.now()).map((s) => ({ label: s.label, method: s.method, createdAt: s.created_at, lastSeen: s.last_seen })),
     passkeys: passkeys.map((p) => ({ name: p.name, createdAt: p.created_at, lastUsed: p.last_used })),
