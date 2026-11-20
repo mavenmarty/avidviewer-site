@@ -41,11 +41,14 @@ function layout({ title, description, nav, path, body, scripts = '' }) {
   <div class="wrap">
     <a class="brand" href="/">${logo}<span>Avid Viewer</span></a>
     <nav class="nav" aria-label="Main">
-      <a href="/#features">Features</a>
-      <a href="/#devices">Get the app</a>
-      <a href="/guide/"${cur('guide')}>User guide</a>
-      <a href="/support/"${cur('support')}>Support</a>
+      <div class="nav-links" id="nav-links">
+        <a href="/#features">Features</a>
+        <a href="/#devices">Get the app</a>
+        <a href="/guide/"${cur('guide')}>User guide</a>
+        <a href="/support/"${cur('support')}>Support</a>
+      </div>
       <a class="btn btn-primary" id="hdr-account" href="/signin/"${cur('account')}>Sign up / Sign in</a>
+      <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="nav-links"><span aria-hidden="true">☰</span><span class="vh">Menu</span></button>
     </nav>
   </div>
 </header>

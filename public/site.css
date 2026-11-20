@@ -452,11 +452,53 @@ button.btn-ghost { background: transparent; color: var(--text); }
 .mg-addtop { border-top: 0; border-bottom: 1px solid var(--line); padding: 0 0 10px; }
 .mg-addtop.dirty, .mg-addfoot.dirty { color: var(--accent-hi); }
 
-/* Narrow screens: the sticky header stays one row; the links scroll sideways */
-@media (max-width: 640px) {
-  .site-header .wrap { flex-wrap: nowrap; }
+/* Phones (owner, Nov 19): logo, the account button and a Menu button; the links open as a panel under the header.
+   The home page is tighter: smaller headings and gaps, full-width buttons, a two-program guide picture and the
+   devices as a list. */
+.nav-links { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 22px; }
+.nav-toggle { display: none; }
+.vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+@media (max-width: 720px) {
+  html { scroll-padding-top: 76px; }
+  .site-header .wrap { flex-wrap: nowrap; position: relative; padding-top: 10px; padding-bottom: 10px; }
+  .nav { flex-wrap: nowrap; gap: 10px; }
+  .nav .btn { padding: 9px 14px; max-width: 12em; }
+  .brand { white-space: nowrap; font-size: 18px; gap: 8px; }
+  .brand svg { width: 30px; height: 30px; }
+  .nav-toggle { display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 42px; border-radius: 12px; border: 1px solid var(--line-2); background: transparent; color: var(--text); font-size: 20px; cursor: pointer; }
+  .site-header.open .nav-toggle { border-color: var(--accent); color: var(--accent-hi); }
+  .nav-links { display: none; position: absolute; left: 0; right: 0; top: 100%; flex-direction: column; align-items: stretch; gap: 0; padding: 6px 24px 14px; background: var(--ground); border-bottom: 1px solid var(--line); box-shadow: 0 18px 30px rgba(0,0,0,0.45); }
+  .site-header.open .nav-links { display: flex; }
+  .nav-links a { padding: 14px 0; font-size: 17px; border-bottom: 1px solid var(--line); }
+  .nav-links a:last-child { border-bottom: 0; }
+
+  .section { padding: 44px 0; }
+  .section h2 { font-size: 30px !important; line-height: 1.08; }
+  .lede, .hero .lede { font-size: 17px; }
+  .hero { padding: 20px 0 24px; gap: 28px; }
+  .hero h1 { font-size: clamp(32px, 10.4vw, 40px); }
+  .hero-copy { gap: 16px; }
+  .hero-copy .row .btn, .banner .btn { flex: 1 1 100%; text-align: center; }
+  .tv { border-width: 8px; padding: 12px; border-radius: 14px; }
+  .tv-row { font-size: 11px; gap: 5px; }
+  .tv-row > div { padding: 9px 8px; }
+  .tv-row .ch { flex-basis: 84px; }
+  .tv-row > div:nth-child(n+4) { display: none; }
+  .notice { margin-bottom: 8px; font-size: 14px; padding: 14px 16px; }
+  .row { gap: 14px; }
+  .card, .big-card { padding: 20px; gap: 8px; }
+  .big-card { gap: 16px; }
+  .card h3 { font-size: 20px; }
+  .big-card h3 { font-size: 22px; }
+  .big-card li { font-size: 15px; }
+  .handoff { flex-direction: column; align-items: stretch; gap: 6px; }
+  .handoff .mini { flex: none; }
+  .arrow { transform: rotate(90deg); align-self: center; line-height: 1; }
+  .banner { padding: 20px; }
+  .device { flex: 1 1 100%; flex-direction: row; align-items: center; justify-content: space-between; padding: 14px 18px; }
+  .device strong { font-size: 17px; }
+  #devices .row { gap: 10px; }
+}
+@media (max-width: 380px) {
   .brand span { display: none; }
-  .nav { flex-wrap: nowrap; overflow-x: auto; gap: 18px; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
-  .nav a { white-space: nowrap; }
-  .nav .btn { position: sticky; right: 0; flex: none; padding: 9px 12px; max-width: 12em; box-shadow: -14px 0 12px rgba(20, 16, 13, 0.9); }
 }
