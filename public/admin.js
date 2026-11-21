@@ -153,6 +153,9 @@
     return f;
   }
 
+  $('adm-user-close').addEventListener('click', function () { $('adm-user-dlg').close(); });
+  // A click on the dimmed area around the window closes it too.
+  $('adm-user-dlg').addEventListener('click', function (e) { if (e.target === e.currentTarget) e.currentTarget.close(); });
   var qTimer;
   $('adm-q').addEventListener('input', function () { clearTimeout(qTimer); qTimer = setTimeout(loadUsers, 250); });
   $('adm-status').addEventListener('change', loadUsers);
@@ -169,6 +172,7 @@
   function loadUser(id) {
     get('/api/admin/user?id=' + encodeURIComponent(id)).then(function (d) {
       var box = $('adm-user'); box.innerHTML = '';
+      var dlg = $('adm-user-dlg'); if (!dlg.open) { dlg.showModal(); dlg.scrollTop = 0; }
       if (!d._ok) { box.appendChild(el('p', 'soft', d.error || 'Not found.')); return; }
       var u = d.user;
       box.appendChild(el('h2', null, u.email));
@@ -316,7 +320,7 @@
         if (!r._ok) { $('adm-d-err').textContent = r.error || "That didn't work."; return; }
         dlg.close();
         loadUsers();
-        if (reloadId) loadUser(reloadId); else $('adm-user').innerHTML = '<p class="soft">Done. Choose another account.</p>';
+        if (reloadId) loadUser(reloadId); else { var ud = $('adm-user-dlg'); if (ud.open) ud.close(); }
       });
     };
   }

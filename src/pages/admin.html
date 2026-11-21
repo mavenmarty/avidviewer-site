@@ -49,10 +49,8 @@
         <input type="search" id="adm-q" placeholder="Search by email" autocomplete="off">
         <select id="adm-status"><option value="">Everyone</option><option value="active">Active</option><option value="suspended">Suspended</option></select>
       </div>
-      <div class="adm-two wide-right">
-        <div class="setup-card"><table class="adm-table clickable" id="adm-users"></table></div>
-        <div class="setup-card" id="adm-user"><p class="soft">Choose an account to see its devices, sign-ins, notes and history.</p></div>
-      </div>
+      <!-- Nov 21, 2026 (owner): accounts full width; choosing one opens it in a large window. -->
+      <div class="setup-card adm-people"><p class="fineprint">Choose an account to see its license, lines, devices, sign-ins, notes and history.</p><table class="adm-table clickable" id="adm-users"></table></div>
     </section>
 
     <section data-panel="audit" hidden>
@@ -80,6 +78,11 @@
       </div>
     </section>
   </div>
+
+  <dialog id="adm-user-dlg" class="adm-modal" aria-label="Account">
+    <div class="adm-modal-bar"><button class="btn btn-ghost" type="button" id="adm-user-close">✕ Close</button></div>
+    <div id="adm-user"></div>
+  </dialog>
 
   <dialog id="adm-dialog">
     <form method="dialog" id="adm-form">

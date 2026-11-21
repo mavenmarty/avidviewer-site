@@ -618,3 +618,17 @@ button.btn-ghost { background: transparent; color: var(--text); }
 /* Nov 21, 2026: Admin › People › Add a line */
 .adm-addline input { background: var(--card-2); border: 1px solid var(--line-2); border-radius: 8px; color: var(--text); font: 14px var(--body); padding: 6px 8px; min-width: 120px; }
 .adm-addline input[hidden], .adm-addline select[hidden] { display: none; }
+
+/* Nov 21, 2026: Admin › People: accounts full width, the account in a large window */
+.adm-people { padding-bottom: 60px; }
+.adm-people table { width: 100%; }
+.adm-modal { background: var(--card); color: var(--text); border: 1px solid var(--line-2); border-radius: 18px; padding: 0; width: min(1100px, 94vw); max-height: 90vh; }
+.adm-modal::backdrop { background: rgba(0, 0, 0, 0.65); }
+.adm-modal-bar { position: sticky; top: 0; display: flex; justify-content: flex-end; padding: 14px 18px 0; background: var(--card); z-index: 1; }
+.adm-modal #adm-user { padding: 0 32px 32px; }
+.adm-modal #adm-user h2 { margin-top: 0; }
+.adm-modal #adm-user h3 { margin: 28px 0 10px; padding-top: 18px; border-top: 1px solid var(--line); }
+.adm-modal #adm-user > .btn-row { margin: 14px 0 4px; }
+.adm-modal .adm-note { display: flex; gap: 10px; align-items: flex-start; }
+.adm-modal .adm-note textarea { flex: 1; }
+.adm-modal .adm-note .btn { width: auto; }
