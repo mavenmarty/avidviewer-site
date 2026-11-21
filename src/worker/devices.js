@@ -21,6 +21,7 @@ import { handleHistoryTvApi } from './history.js';
 import { json, randomToken, sha256hex, ipOf, body } from './auth.js';
 import { betaFor } from './beta.js';
 import { checkEnding } from './licenses.js';
+import { tvMeExtras, handleStrong8kTvApi } from './strong8k.js';
 import { tvReport, tvClaim as tvReportsClaim, wantsLog, tvReportForm } from './reports.js';
 
 const ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // same as setup codes: no 0/O, 1/I/L
@@ -164,7 +165,9 @@ async function tvMe(request, env) {
     .bind(Date.now(), version, d.id).run();
   // Licenses ending within 3 days: the owner is emailed (at most one check an hour; never fails the check-in).
   await checkEnding(env).catch(() => {});
-  return json({ email: d.email, name: d.name, deviceId: d.id, beta: await betaFor(env, d.id), sendLog: await wantsLog(env, d.id) });
+  // Nov 21: Strong 8K addresses and renewals to carry out, and Reload channels / Check subscription from the website.
+  const extras = await tvMeExtras(env, d).catch((e) => { console.error('tv me extras failed', e); return {}; });
+  return json({ email: d.email, name: d.name, deviceId: d.id, beta: await betaFor(env, d.id), sendLog: await wantsLog(env, d.id), ...extras });
 }
 
 // ---------------------------------------------------------------- cloud backups (TV side)
@@ -277,6 +280,8 @@ export async function handleTvApi(request, env, realUrl) {
   if (!p.startsWith('/api/tv/')) return null;
   const pl = (await handlePlaylistTvApi(request, env, p, url)) || (await handleProfileTvApi(request, env, p)) || (await handleListsTvApi(request, env, p)) || (await handleHistoryTvApi(request, env, p));
   if (pl) return pl;
+  const s8 = await handleStrong8kTvApi(request, env, p);
+  if (s8) return s8;
   if (p === '/api/tv/me') return request.method === 'GET' ? tvMe(request, env) : json({ error: 'Use GET.' }, 405);
   if (p === '/api/tv/backups') return request.method === 'GET' ? tvBackupList(request, env) : json({ error: 'Use GET.' }, 405);
   if (p === '/api/tv/backup' && request.method === 'GET') return tvBackupDownload(request, env, url);
@@ -363,6 +368,8 @@ export async function deviceRemove(request, env, user) {
   await env.DB.prepare('DELETE FROM device_profiles WHERE device_id = ?1 AND user_id = ?2').bind(String(b?.id || ''), user.id).run();
   await env.DB.prepare('DELETE FROM device_history_keys WHERE device_id = ?1 AND user_id = ?2').bind(String(b?.id || ''), user.id).run();
   await env.DB.prepare('DELETE FROM device_playlists WHERE device_id = ?1 AND user_id = ?2').bind(String(b?.id || ''), user.id).run();
+  await env.DB.prepare('DELETE FROM strong8k_line_devices WHERE device_id = ?1 AND user_id = ?2').bind(String(b?.id || ''), user.id).run();
+  await env.DB.prepare('DELETE FROM device_load_status WHERE device_id = ?1 AND user_id = ?2').bind(String(b?.id || ''), user.id).run();
   return json({ ok: true });
 }
 

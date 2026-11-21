@@ -10,6 +10,7 @@
 import { json, body, randomToken, sendSignInLink } from './auth.js';
 import { backupsFor } from './devices.js';
 import { adminLicense, licenseFor, licensesByUser, endingSoon } from './licenses.js';
+import { adminStrong8k, adminLinesFor, handleStrong8kAdmin } from './strong8k.js';
 import { adminBeta, adminBetaChoose, adminBetaOffer } from './beta.js';
 import { adminReports, adminReport, adminTriage, adminBugNote, adminBugSync } from './reports.js';
 
@@ -104,6 +105,7 @@ async function userDetail(env, url) {
     passkeys: passkeys.map((p) => ({ name: p.name, createdAt: p.created_at, lastUsed: p.last_used })),
     notes: notes.map((n) => ({ by: n.admin_email, at: n.at, text: n.text })),
     backups: (await backupsFor(env, u.id)).map((x) => ({ name: x.name, createdAt: x.createdAt, size: x.size, removed: x.removed })),
+    strong8k: await adminLinesFor(env, u.id),
     log: log.map((a) => ({ at: a.at, by: a.admin_email, action: a.action, detail: a.detail, reason: a.reason })),
   });
 }
@@ -216,6 +218,10 @@ async function deleteUser(request, env, admin) {
     env.DB.prepare('DELETE FROM account_playlists WHERE user_id = ?1').bind(u.id),
     env.DB.prepare('DELETE FROM devices WHERE user_id = ?1').bind(u.id),
     env.DB.prepare('DELETE FROM licenses WHERE user_id = ?1').bind(u.id),
+    env.DB.prepare('DELETE FROM strong8k_lines WHERE user_id = ?1').bind(u.id),
+    env.DB.prepare('DELETE FROM strong8k_line_devices WHERE user_id = ?1').bind(u.id),
+    env.DB.prepare('DELETE FROM strong8k_renewals WHERE user_id = ?1').bind(u.id),
+    env.DB.prepare('DELETE FROM device_load_status WHERE user_id = ?1').bind(u.id),
     env.DB.prepare('DELETE FROM link_codes WHERE user_id = ?1').bind(u.id),
     env.DB.prepare('DELETE FROM admin_notes WHERE user_id = ?1').bind(u.id),
     env.DB.prepare('DELETE FROM sign_in_links WHERE email = ?1').bind(u.email),
@@ -244,9 +250,11 @@ export async function handleAdminApi(request, env, url, user) {
       case '/api/admin/beta': return adminBeta(env);
       case '/api/admin/reports': return adminReports(env);
       case '/api/admin/reports/item': return adminReport(env, url);
+      case '/api/admin/strong8k': return adminStrong8k(env);
     }
     return json({ error: 'Not found.' }, 404);
   }
+  if (p.startsWith('/api/admin/strong8k/')) { const r = await handleStrong8kAdmin(request, env, p, user, audit); if (r) return r; }
   switch (p) {
     case '/api/admin/note': return addNote(request, env, user);
     case '/api/admin/license': return adminLicense(request, env, user, audit, body);

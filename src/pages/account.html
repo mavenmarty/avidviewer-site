@@ -54,6 +54,19 @@
       </section>
     </div>
 
+    <section class="setup-card" id="trouble" hidden>
+      <h2>Troubleshooting</h2>
+      <div id="trouble-subs"></div>
+      <h3>Last channel load on each device</h3>
+      <ul class="rows" id="trouble-loads"></ul>
+      <div class="btn-row">
+        <button class="btn btn-ghost" type="button" id="trouble-reload">Reload channels now</button>
+        <button class="btn btn-ghost" type="button" id="trouble-check" hidden>Check my subscription</button>
+      </div>
+      <p class="fineprint">Each device does this the next time it checks in, usually within a few minutes while it's on.</p>
+      <p class="form-msg" id="trouble-msg" role="status" aria-live="polite"></p>
+    </section>
+
     <section class="setup-card danger">
       <h2>Delete account</h2>
       <p class="soft">Deletes your profiles, playlists, backups and the list of devices, signs out every browser and removes your passkeys. Avid Viewer keeps working on each device with what it has. This can't be undone.</p>

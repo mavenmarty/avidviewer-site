@@ -165,6 +165,7 @@
       lic.textContent = L.perpetual ? k + ': doesn\u2019t expire.' : L.status === 'expired' ? k + ': ended ' + dd(L.endsAt) + '.' : k + ': until ' + dd(L.endsAt) + '.';
       lic.hidden = false;
     }
+    renderTrouble();
     var ls = document.getElementById('locked-state');
     if (ls) {
       ls.innerHTML = '';
@@ -250,6 +251,56 @@
     document.getElementById('end-others').hidden = me.sessions.length < 2;
     document.getElementById('watch-history').checked = me.watchHistory;
   }
+
+  // Nov 21, 2026: troubleshooting. Strong 8K subscriptions (confirmed with the reseller panel, through the TV app),
+  // each device's last channel load, and Reload channels / Check my subscription for the devices' next check-in.
+  var PROBLEM = { login: 'Login not accepted', expired: 'Subscription expired', unreachable: "Couldn't reach the server", empty: 'No channels came back', other: "Channels didn't load" };
+  function ago(ms) {
+    var m = Math.round((Date.now() - ms) / 60000);
+    if (m < 1) return 'just now'; if (m < 60) return m + ' min ago';
+    var h = Math.round(m / 60); if (h < 48) return h + ' h ago';
+    return Math.round(h / 24) + ' days ago';
+  }
+  function renderTrouble() {
+    var box = document.getElementById('trouble'); if (!box) return;
+    var T = me.troubleshooting || { strong8k: [], loads: [], requested: {} };
+    box.hidden = !me.devices.length && !T.strong8k.length;
+    var dd = function (ms) { return new Date(ms).toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' }); };
+    var subs = document.getElementById('trouble-subs'); subs.innerHTML = '';
+    T.strong8k.forEach(function (l) {
+      var expired = l.expiresAt && l.expiresAt <= Date.now();
+      var soon = l.expiresAt && !expired && l.expiresAt - Date.now() < 7 * 864e5;
+      var p = el('p', !l.enabled || expired ? 'mg-warn' : soon ? 'mg-warn' : 'soft');
+      p.appendChild(el('strong', null, l.name + ' (Strong 8K): '));
+      p.appendChild(document.createTextNode(!l.enabled ? 'turned off at Strong 8K. Contact us to turn it back on.' : expired ? 'ended ' + dd(l.expiresAt) + '. Contact us to renew.' : l.expiresAt ? 'active until ' + dd(l.expiresAt) + '.' : 'active.'));
+      p.appendChild(el('span', 'fineprint', ' Checked ' + ago(l.checkedAt) + '.'));
+      subs.appendChild(p);
+    });
+    document.getElementById('trouble-check').hidden = !T.strong8k.length;
+    var names = {}; me.devices.forEach(function (d) { names[d.id] = d.name; });
+    var ul = document.getElementById('trouble-loads'); ul.innerHTML = '';
+    if (!T.loads.length) ul.appendChild(el('li', 'soft', me.devices.length ? 'No device has reported yet. Devices report after loading channels (Avid Viewer 1.24 or newer).' : 'No devices linked yet.'));
+    T.loads.forEach(function (x) {
+      var li = el('li');
+      li.appendChild(el('span', null, (names[x.deviceId] || 'A device') + ' · ' + x.name));
+      li.appendChild(el('span', x.ok ? 'soft' : 'mg-warn', (x.ok ? (x.channels != null ? x.channels.toLocaleString() + ' channels' : 'Loaded') : (PROBLEM[x.problem] || PROBLEM.other)) + ' · ' + ago(x.at)));
+      ul.appendChild(li);
+    });
+    var waiting = Object.keys(T.requested || {}).filter(function (k) { return T.requested[k].reload || T.requested[k].check; }).length;
+    if (waiting) say(document.getElementById('trouble-msg'), 'Waiting for ' + waiting + ' device' + (waiting === 1 ? '' : 's') + ' to check in.');
+  }
+  function troubleAsk(what, btn) {
+    btn.disabled = true;
+    post('/api/account/devices/request', { what: what }).then(function (d) {
+      btn.disabled = false;
+      say(document.getElementById('trouble-msg'), d._ok === false || d.error ? (d.error || "That didn't work.") : (what === 'reload' ? 'Asked ' : 'Checking on ') + d.devices + ' device' + (d.devices === 1 ? '' : 's') + '. Come back in a few minutes to see the result.');
+    });
+  }
+  (function () {
+    var r = document.getElementById('trouble-reload'), c = document.getElementById('trouble-check');
+    if (r) r.addEventListener('click', function () { troubleAsk('reload', r); });
+    if (c) c.addEventListener('click', function () { troubleAsk('check', c); });
+  })();
 
   function load() {
     return fetch('/api/me', { credentials: 'same-origin' }).then(function (r) {
