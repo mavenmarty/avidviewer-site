@@ -610,3 +610,7 @@ button.btn-ghost { background: transparent; color: var(--text); }
 .adm-license select { padding: 6px 8px; border-radius: 8px; }
 .adm-warn { color: #F5C77E; }
 .acct-license { margin: 0 0 14px; }
+
+/* Nov 21, 2026: Reseller lines card on Admin › Dashboard (full width) */
+#adm-rs { grid-column: 1 / -1; }
+#adm-rs-hosts input { flex: 1; min-width: 240px; background: var(--card-2); border: 1px solid var(--line-2); border-radius: 10px; color: var(--text); font: 15px var(--body); padding: 10px 12px; }

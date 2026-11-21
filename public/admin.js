@@ -20,7 +20,8 @@
     if (!rows.length) { var e = el('tr'); var td = el('td', 'soft', 'Nothing yet.'); td.colSpan = head.length; e.appendChild(td); t.appendChild(e); }
     rows.forEach(function (r) { var row = el('tr'); r.cells.forEach(function (c) { row.appendChild(el('td', null, c)); }); if (r.onclick) { row.tabIndex = 0; row.addEventListener('click', r.onclick); row.addEventListener('keydown', function (e) { if (e.key === 'Enter') r.onclick(); }); } t.appendChild(row); });
   }
-  var ACTIONS = { suspend: 'Suspended', unsuspend: 'Lifted suspension', 'delete': 'Deleted account', revoke_tv: 'Signed out device', resend_link: 'Sent sign-in link', end_sessions: 'Signed out browsers', note: 'Added note', beta_choose: 'Chose for the beta', beta_remove: 'Took out of the beta', beta_offer: 'Offered beta build', report_add: 'Added a report to a bug', report_file: 'Filed a bug', report_not_app: 'Marked a report not an app problem', report_need_info: 'Asked for details', report_ignore: 'Ignored a report', report_undo: 'Undid an automatic match', report_reopen: 'Put a report back in the queue', bug_note: 'Changed what a bug says', license_grant: 'Granted a license', license_revoke: 'Revoked licenses' };
+  var ACTIONS = { suspend: 'Suspended', unsuspend: 'Lifted suspension', 'delete': 'Deleted account', revoke_tv: 'Signed out device', resend_link: 'Sent sign-in link', end_sessions: 'Signed out browsers', note: 'Added note', beta_choose: 'Chose for the beta', beta_remove: 'Took out of the beta', beta_offer: 'Offered beta build', report_add: 'Added a report to a bug', report_file: 'Filed a bug', report_not_app: 'Marked a report not an app problem', report_need_info: 'Asked for details', report_ignore: 'Ignored a report', report_undo: 'Undid an automatic match', report_reopen: 'Put a report back in the queue', bug_note: 'Changed what a bug says', license_grant: 'Granted a license', license_revoke: 'Revoked licenses', reseller_renew: 'Asked for a the provider renewal', reseller_renew_cancel: 'Cancelled a the provider renewal', reseller_renew_resolve: 'Resolved a the provider renewal', reseller_enable: 'Turned on a line', reseller_disable: 'Turned off a line', reseller_hosts: 'Changed the reseller addresses' };
+  var RSSTATUS = { pending: 'Waiting for a device', running: 'Renewing', done: 'Renewed', failed: 'Failed', unknown: 'Result unknown: check the panel', cancelled: 'Cancelled', expired: 'No device checked in' };
   // Nov 20, 2026: licenses. Lengths match LENGTHS in src/worker/licenses.js.
   var LENGTHS = [['7d', '7 days'], ['1m', '1 month'], ['3m', '3 months'], ['6m', '6 months'], ['1y', '1 year'], ['perpetual', 'Perpetual']];
   function day(ms) { return new Date(ms).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }); }
@@ -77,6 +78,7 @@
         var b = el('div', 'bar'); b.style.height = Math.max(2, Math.round(100 * n / max)) + '%'; b.title = day + ': ' + n; bars.appendChild(b);
       }
       table($('adm-versions'), ['App version', 'Devices'], (s.versions || []).map(function (v) { return { cells: [v.v, String(v.n)] }; }));
+      loadReseller();
       var le = s.licensesEnding || [];
       $('adm-ending-none').hidden = le.length > 0;
       table($('adm-ending'), ['Account', 'License', ''], le.map(function (x) {
@@ -84,6 +86,33 @@
       }));
     });
   }
+
+  // Nov 21, 2026: reseller lines (src/worker/reseller.js). Credits, addresses, renewals waiting or recent.
+  function after(p) { return p.then(function (r) { if (r._ok) loadReseller(); return r; }); }
+  function loadReseller() {
+    get('/api/admin/reseller').then(function (d) {
+      var st = $('adm-rs-state');
+      if (!d._ok) { st.textContent = d.error || "Couldn't load."; return; }
+      var bits = [d.configured ? 'Reseller key set' : 'OFF: RESELLER_API_KEY / RESELLER_API_BASE secrets missing'];
+      if (d.reseller) bits.push(d.reseller.error ? d.reseller.error : 'Credits: ' + (d.reseller.credits == null ? '?' : d.reseller.credits) + (d.reseller.enabled === false ? ' (reseller account turned off)' : ''));
+      bits.push(plural(d.lines || 0, 'confirmed line'));
+      bits.push(d.hosts.length ? 'Addresses: ' + d.hosts.join(', ') : 'No server addresses yet');
+      st.textContent = bits.join(' · ');
+      st.className = !d.configured || !d.hosts.length || (d.reseller && (d.reseller.error || (d.reseller.credits != null && Number(d.reseller.credits) < 5))) ? 'adm-warn' : 'soft';
+      $('adm-rs-hosts-in').value = d.hosts.join(', ');
+      table($('adm-rs-renewals'), ['Account', 'Line', 'Renewal', 'Status', ''], (d.renewals || []).map(function (r) {
+        var act = r.status === 'pending' ? 'Cancel' : r.status === 'unknown' ? 'Resolve' : '';
+        return { cells: [r.email || '—', r.name || '—', plural(r.months, 'month') + ' · ' + when(r.createdAt), (RSSTATUS[r.status] || r.status) + (r.message && r.status !== 'done' ? ' · ' + r.message : ''), act], onclick: act ? function () {
+          ask(act === 'Cancel' ? 'Cancel this renewal?' : 'Mark this renewal resolved?', act === 'Cancel' ? 'No credits are spent.' : 'Check the line in the provider panel first. This closes it so the line can be renewed again.', false, false, function (reason) { return after(post('/api/admin/reseller/renewal', { id: r.id, action: act.toLowerCase(), reason: reason })); }, null);
+        } : null };
+      }));
+    });
+  }
+  $('adm-rs-hosts').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var v = $('adm-rs-hosts-in').value;
+    ask('Save the reseller addresses?', 'Devices check playlists on these addresses with the provider: ' + (v.trim() || '(none)'), false, false, function (reason) { return after(post('/api/admin/reseller/hosts', { hosts: v, reason: reason })); }, null);
+  });
 
   var qTimer;
   $('adm-q').addEventListener('input', function () { clearTimeout(qTimer); qTimer = setTimeout(loadUsers, 250); });
@@ -137,6 +166,52 @@
         var ll = el('ul', 'rows');
         d.licenses.forEach(function (l) { var li = el('li'); li.appendChild(el('span', null, (l.kind === 'comp' ? 'Complimentary' : l.kind === 'paid' ? 'Paid' : 'Trial') + ': ' + day(l.startsAt) + ' – ' + (l.endsAt ? day(l.endsAt) : 'perpetual') + (l.revokedAt ? ' (revoked ' + day(l.revokedAt) + ')' : ''))); li.appendChild(el('span', 'soft', (l.source === 'auto' ? 'automatic' : l.by || l.source) + (l.note ? ' · "' + l.note + '"' : ''))); ll.appendChild(li); });
         box.appendChild(ll);
+      }
+
+      // lines confirmed in this account: renew (from your credits, at a device's next check-in), turn on/off.
+      var s8 = d.reseller || { lines: [], renewals: [] };
+      if (s8.lines.length || s8.renewals.length) {
+        box.appendChild(el('h3', null, 'Reseller lines'));
+        var sl = el('ul', 'rows');
+        s8.lines.forEach(function (l) {
+          var li = el('li');
+          var ended = l.expiresAt && l.expiresAt <= Date.now();
+          li.appendChild(el('span', !l.enabled || ended ? 'adm-warn' : null, (l.name || 'line') + ': ' + (!l.enabled ? 'turned off' : ended ? 'ended ' + day(l.expiresAt) : l.expiresAt ? 'until ' + day(l.expiresAt) : 'active')));
+          li.appendChild(el('span', 'soft', 'line ' + l.lineId + ' · on ' + plural(l.devices, 'device') + ' · checked ' + when(l.checkedAt)));
+          var f = el('form', 'adm-license');
+          var m = el('select'); m.setAttribute('aria-label', 'Months');
+          [1, 3, 6, 12].forEach(function (n) { var o = el('option', null, plural(n, 'month')); o.value = String(n); m.appendChild(o); });
+          var rb = el('button', 'btn btn-primary', 'Renew'); rb.type = 'submit';
+          f.appendChild(m); f.appendChild(rb);
+          f.addEventListener('submit', function (e) {
+            e.preventDefault();
+            ask('Renew for ' + plural(Number(m.value), 'month') + '?', 'Uses your reseller credits. It happens the next time a device with this line checks in' + (l.devices ? '' : ' (no device has it right now)') + '.', false, false, function (reason) { return post('/api/admin/reseller/renew', { userId: u.id, lineId: l.lineId, months: Number(m.value), reason: reason }); }, id);
+          });
+          var tb = el('button', 'linkish', l.enabled ? 'Turn off at the provider' : 'Turn on at the provider'); tb.type = 'button';
+          tb.addEventListener('click', function () {
+            ask(l.enabled ? 'Turn this line off?' : 'Turn this line on?', l.enabled ? 'Channels stop working on every device using this line until it is turned back on.' : 'Channels work again on devices using this line.', false, false, function (reason) { return post('/api/admin/reseller/line', { userId: u.id, lineId: l.lineId, enabled: !l.enabled, reason: reason }); }, id);
+          });
+          f.appendChild(tb);
+          li.appendChild(f);
+          sl.appendChild(li);
+        });
+        box.appendChild(sl);
+        if (s8.renewals.length) {
+          var rl = el('ul', 'rows');
+          s8.renewals.forEach(function (r) {
+            var li = el('li');
+            li.appendChild(el('span', null, plural(r.months, 'month') + ': ' + (RSSTATUS[r.status] || r.status) + (r.expiresAfter ? ', now until ' + day(r.expiresAfter) : '')));
+            li.appendChild(el('span', 'soft', (r.by || '') + ' · ' + when(r.createdAt) + (r.message && r.status !== 'done' ? ' · ' + r.message : '')));
+            if (r.status === 'pending' || r.status === 'unknown') {
+              var act = r.status === 'pending' ? 'cancel' : 'resolve';
+              var cb = el('button', 'linkish', act === 'cancel' ? 'Cancel' : 'Mark resolved'); cb.type = 'button';
+              cb.addEventListener('click', function () { ask(act === 'cancel' ? 'Cancel this renewal?' : 'Mark resolved?', act === 'cancel' ? 'No credits are spent.' : 'Check the line in the provider panel first.', false, false, function (reason) { return post('/api/admin/reseller/renewal', { id: r.id, action: act, reason: reason }); }, id); });
+              li.appendChild(cb);
+            }
+            rl.appendChild(li);
+          });
+          box.appendChild(rl);
+        }
       }
 
       box.appendChild(el('h3', null, 'Devices'));

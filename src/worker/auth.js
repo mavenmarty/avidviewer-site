@@ -22,6 +22,7 @@ import { listsGet, listsSave, orderGet, orderSave } from './lists.js';
 import { historyGet, historyPut, historyKeySave, historyDevices, historySeal, profileHistory, clearAllHistory, discoverSave, tmdbSave } from './history.js';
 import { deviceBeta } from './beta.js';
 import { grantTrial, licenseFor } from './licenses.js';
+import { accountTroubleshooting, accountRequest } from './reseller.js';
 import { accountReports, accountReport, accountReportNote } from './reports.js';
 import { manage, catalogFor, profileSave, profileRemove, profilePin, profileVisibility, deviceSetProfiles, deviceStop, vaultKey, accountKeySave, deviceLogins, playlistsImport, playlistsAdopt } from './profiles.js';
 import {
@@ -306,6 +307,7 @@ async function me(env, user) {
     devices: await devicesFor(env, user.id),
     deviceLimit: MAX_DEVICES,
     license: await licenseFor(env, user.id),
+    troubleshooting: await accountTroubleshooting(env, user.id), // Nov 21: lines, last channel loads
     backups: await backupsFor(env, user.id),
     passkeys: passkeys.results.map((p) => ({ id: p.id, name: p.name, createdAt: p.created_at, lastUsed: p.last_used, unlocksLogins: vault.includes(p.id) })),
     sessions: sessions.results.map((s) => ({
@@ -365,6 +367,10 @@ async function deleteAccount(request, env, user) {
     env.DB.prepare('DELETE FROM account_playlists WHERE user_id = ?1').bind(user.id),
     env.DB.prepare('DELETE FROM devices WHERE user_id = ?1').bind(user.id),
     env.DB.prepare('DELETE FROM licenses WHERE user_id = ?1').bind(user.id),
+    env.DB.prepare('DELETE FROM reseller_lines WHERE user_id = ?1').bind(user.id),
+    env.DB.prepare('DELETE FROM reseller_line_devices WHERE user_id = ?1').bind(user.id),
+    env.DB.prepare('DELETE FROM reseller_renewals WHERE user_id = ?1').bind(user.id),
+    env.DB.prepare('DELETE FROM device_load_status WHERE user_id = ?1').bind(user.id),
     env.DB.prepare('DELETE FROM link_codes WHERE user_id = ?1').bind(user.id),
     env.DB.prepare('DELETE FROM sign_in_links WHERE email = ?1').bind(user.email),
     // Reports stay for the bug history, no longer tied to the account (reports.js).
@@ -451,6 +457,7 @@ export async function handleAccountApi(request, env, realUrl) {
     case '/api/account/delete': return deleteAccount(request, env, user);
     case '/api/account/devices/rename': return deviceRename(request, env, user);
     case '/api/account/devices/remove': return deviceRemove(request, env, user);
+    case '/api/account/devices/request': return request.method === 'POST' ? accountRequest(request, env, user) : json({ error: 'Use POST.' }, 405);
     case '/api/account/devices/beta': return deviceBeta(request, env, user);
     case '/api/account/reports': return accountReports(env, user);
     case '/api/account/reports/item': return accountReport(env, user, url);
