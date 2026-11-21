@@ -300,7 +300,7 @@ export async function manage(env, user) {
   const [devs, pls, ts, profs, pp, dp, vis, cats, keys] = await Promise.all([
     env.DB.prepare(`SELECT id, name, model, app_version, pubkey, profiles, managed_at, last_seen, playing, playing_at, stop_at, beta_offer, beta_at FROM devices
       WHERE user_id = ?1 AND revoked_at IS NULL ORDER BY created_at`).bind(uid).all(),
-    env.DB.prepare('SELECT id, name, type, updated_at, removing, (vault IS NOT NULL) AS kept FROM account_playlists WHERE user_id = ?1 ORDER BY name').bind(uid).all(),
+    env.DB.prepare('SELECT id, name, type, updated_at, removing, (vault IS NOT NULL) AS kept, (sealed IS NOT NULL AND vault IS NULL) AS waiting FROM account_playlists WHERE user_id = ?1 ORDER BY name').bind(uid).all(),
     env.DB.prepare('SELECT playlist_id, device_id, profiles, action, status, error, updated_at FROM playlist_targets WHERE user_id = ?1').bind(uid).all(),
     env.DB.prepare('SELECT id, name, kids, parent, color, (pin IS NOT NULL) AS has_pin, sort, history_off FROM profiles WHERE user_id = ?1 ORDER BY sort, created_at').bind(uid).all(),
     env.DB.prepare('SELECT profile_id, playlist_id FROM profile_playlists WHERE user_id = ?1').bind(uid).all(),
@@ -327,7 +327,7 @@ export async function manage(env, user) {
       betaOffer: Boolean(d.beta_offer), inBeta: Boolean(d.beta_at),
     })),
     playlists: pls.results.map((p) => ({
-      id: p.id, name: p.name, type: p.type, updatedAt: p.updated_at, removing: Boolean(p.removing), kept: Boolean(p.kept),
+      id: p.id, name: p.name, type: p.type, updatedAt: p.updated_at, removing: Boolean(p.removing), kept: Boolean(p.kept), accountSealed: Boolean(p.waiting),
       profiles: pp.results.filter((x) => x.playlist_id === p.id).map((x) => x.profile_id),
       catalogAt: cats.results.find((c) => c.playlist_id === p.id)?.updated_at || null,
       catalog: (({ playlist_id, ...c }) => c)(csum.results.find((c) => c.playlist_id === p.id) || { playlist_id: 0, none: true }),
@@ -519,8 +519,10 @@ export async function accountKeySave(request, env, user) {
 
 /** The logins devices locked for the account key (opened only in the owner's browser). */
 export async function deviceLogins(env, user) {
+  // Nov 21, 2026: also lines the owner added (Admin › Add a line), locked for the account key, listed as from 'account'.
   const r = await env.DB.prepare(`SELECT device_id, local_id, remote_id, sealed FROM device_playlists WHERE user_id = ?1 AND sealed IS NOT NULL
-      AND device_id IN (SELECT id FROM devices WHERE user_id = ?1 AND revoked_at IS NULL)`).bind(user.id).all();
+      AND device_id IN (SELECT id FROM devices WHERE user_id = ?1 AND revoked_at IS NULL)
+    UNION ALL SELECT 'account', id, id, sealed FROM account_playlists WHERE user_id = ?1 AND sealed IS NOT NULL AND vault IS NULL AND removing = 0`).bind(user.id).all();
   return json({ items: r.results.map((x) => ({ deviceId: x.device_id, localId: x.local_id, remoteId: x.remote_id, sealed: JSON.parse(x.sealed) })) });
 }
 
@@ -531,7 +533,7 @@ export async function playlistsImport(request, env, user) {
   const stmts = [];
   for (const it of items) {
     if (typeof it?.vault !== 'string' || !/^[A-Za-z0-9+/=]{40,20000}$/.test(it.vault)) continue;
-    stmts.push(env.DB.prepare('UPDATE account_playlists SET vault = ?1 WHERE id = ?2 AND user_id = ?3 AND vault IS NULL')
+    stmts.push(env.DB.prepare('UPDATE account_playlists SET vault = ?1, sealed = NULL WHERE id = ?2 AND user_id = ?3 AND vault IS NULL')
       .bind(it.vault, clip(it.id, 40), user.id));
   }
   if (stmts.length) await env.DB.batch(stmts);

@@ -16,6 +16,7 @@
 // "Reload channels now" / "Check my subscription", which the device picks up at its next check-in.
 import { json, randomToken, body } from './auth.js';
 import { deviceFor } from './devices.js';
+import { reconcile } from './profiles.js';
 
 const DAY = 86_400_000;
 export const MONTHS = [1, 3, 6, 12];
@@ -343,12 +344,144 @@ async function adminHosts(request, env, admin, audit) {
   return json({ ok: true, hosts });
 }
 
+
+// ---------------------------------------------------------------- admin: add a line to an account (Nov 21, 2026)
+//
+// A new line (panel action=new, from the owner's credits) or one that already exists (confirmed with device_info).
+// The website handles the login only for this request: it's locked for the account's key (accounts with locked logins:
+// the playlist is the account's, given to no profile yet), or for each linked device (accounts without: given to every
+// profile so their devices get it), shown to the admin once, and never stored or logged.
+
+const b64 = (u8) => btoa(String.fromCharCode(...u8));
+const unb64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
+
+/** The same envelope the browser (public/playlists.js) and the TV (DeviceKey.seal) make: ECDH P-256 → HKDF-SHA256 → AES-GCM. */
+export async function sealFor(pubB64, obj, info) {
+  const S = crypto.subtle;
+  const to = await S.importKey('raw', unb64(pubB64), { name: 'ECDH', namedCurve: 'P-256' }, false, []);
+  const eph = await S.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits']);
+  const z = await S.deriveBits({ name: 'ECDH', public: to }, eph.privateKey, 256);
+  const epk = new Uint8Array(await S.exportKey('raw', eph.publicKey));
+  const hk = await S.importKey('raw', z, 'HKDF', false, ['deriveKey']);
+  const key = await S.deriveKey({ name: 'HKDF', hash: 'SHA-256', salt: epk, info: new TextEncoder().encode(info) }, hk, { name: 'AES-GCM', length: 256 }, false, ['encrypt']);
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = new Uint8Array(await S.encrypt({ name: 'AES-GCM', iv }, key, new TextEncoder().encode(JSON.stringify(obj))));
+  return { v: 1, epk: b64(epk), iv: b64(iv), ct: b64(ct) };
+}
+
+/** "http://host:port/get.php?username=u&password=p&type=m3u_plus…" → {server, username, password} (null if not that kind). */
+export function loginFromUrl(url) {
+  try {
+    const u = new URL(String(url));
+    const username = u.searchParams.get('username') || '', password = u.searchParams.get('password') || '';
+    if (!username || !password) return null;
+    return { server: `${u.protocol}//${u.host}`, username, password };
+  } catch { return null; }
+}
+
+/** GET /api/admin/reseller/packages: the panel's packages (bouquets) for the New line form. */
+export async function adminPackages(env) {
+  if (!configured(env)) return json({ error: 'Add the RESELLER_API_KEY and RESELLER_API_BASE secrets first.' }, 503);
+  const r = await panel(env, { action: 'bouquet' });
+  if (!r.reached || !Array.isArray(r.data)) return json({ error: "Couldn't get the packages: " + (r.why || 'unexpected answer') + '.' }, 502);
+  return json({ packages: r.data.map((p) => ({ id: String(p.id ?? ''), name: String(p.name ?? p.id ?? '') })).filter((p) => p.id) });
+}
+
+/**
+ * POST /api/admin/reseller/add-line {userId, name, reason, mode: 'new', months, pack} or {…, mode: 'existing', server,
+ * username, password}: makes or confirms the line, puts its playlist in the account and answers the login once.
+ */
+async function adminAddLine(request, env, admin, audit) {
+  if (!configured(env)) return json({ error: 'Add the RESELLER_API_KEY and RESELLER_API_BASE secrets first.' }, 503);
+  const b = await body(request);
+  const reason = reasonOf(b);
+  if (!reason) return json({ error: 'Give a reason (it goes in the audit log).' }, 400);
+  const u = await env.DB.prepare("SELECT id, email, status FROM users WHERE id = ?1").bind(String(b?.userId || '')).first();
+  if (!u) return json({ error: 'Account not found.' }, 404);
+  const name = clip(b?.name, 60) || 'TV';
+  if (await env.DB.prepare('SELECT 1 FROM account_playlists WHERE user_id = ?1 AND lower(name) = lower(?2) AND removing = 0').bind(u.id, name).first()) {
+    return json({ error: `That account already has a playlist called ${name}. Choose another name.` }, 400);
+  }
+  const hosts = await hostsFor(env);
+  let login, lineId, made = false, newId = null;
+  if (b?.mode === 'new') {
+    const months = Number(b?.months);
+    if (!MONTHS.includes(months)) return json({ error: 'Choose 1, 3, 6 or 12 months.' }, 400);
+    const pack = clip(String(b?.pack ?? ''), 40);
+    if (!pack) return json({ error: 'Choose a package.' }, 400);
+    // The panel keeps a note with the line: the account's id, never its email.
+    const r = await panel(env, { action: 'new', type: 'm3u', sub: months, pack, notes: 'Avid Viewer ' + u.id.slice(0, 8) });
+    if (!r.reached) return json({ error: "The panel didn't answer, so the line may or may not have been made. Check the panel before trying again." }, 502);
+    if (!r.data || !truthy(r.data.status)) return json({ error: 'The panel refused: ' + (r.data?.message ?? r.data?.messasge ?? r.why ?? 'no reason given') }, 502);
+    newId = r.data.user_id != null ? String(r.data.user_id) : null;
+    login = loginFromUrl(r.data.url);
+    if (!login) return json({ error: "The line was made, but its playlist link didn't come back. Find it in the panel (note: Avid Viewer " + u.id.slice(0, 8) + ') and use Existing line.' }, 502);
+    made = true;
+  } else if (b?.mode === 'existing') {
+    const server = clip(b?.server, 200);
+    login = { server: /^[a-z]+:\/\//i.test(server) ? server.replace(/\/+$/, '') : 'http://' + server.replace(/\/+$/, ''), username: clip(b?.username, 200), password: clip(b?.password, 200) };
+    if (!hostOf(login.server) || !login.username || !login.password) return json({ error: 'Enter the server, username and password.' }, 400);
+  } else return json({ error: 'Choose New line or Existing line.' }, 400);
+  if (hosts.length && !hosts.includes(hostOf(login.server)) && b?.mode === 'existing') {
+    return json({ error: 'That server is not one of your reseller addresses (Dashboard › Reseller lines).' }, 400);
+  }
+  const info = await lineInfo(env, login.username, login.password);
+  if (!made && (info.error || !info.line)) return json({ error: info.error ? "Couldn't reach the panel to check the line." : "That login isn't one of your lines." }, 400);
+  lineId = info.line?.lineId || newId;
+  const now = Date.now();
+  const playlist = { name, type: 'xtream', server: login.server, username: login.username, password: login.password, m3uUrl: '', epgUrl: '' };
+  const id = randomToken(12);
+  const akey = await env.DB.prepare('SELECT pubkey FROM account_keys WHERE user_id = ?1').bind(u.id).first();
+  const stmts = [];
+  let delivered;
+  if (akey?.pubkey) {
+    const sealed = await sealFor(akey.pubkey, playlist, 'avidviewer-account:v1');
+    stmts.push(env.DB.prepare('INSERT INTO account_playlists (id, user_id, name, type, vault, sealed, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, NULL, ?5, ?6, ?6)')
+      .bind(id, u.id, name, 'xtream', JSON.stringify(sealed), now));
+    delivered = 'account';
+  } else {
+    stmts.push(env.DB.prepare('INSERT INTO account_playlists (id, user_id, name, type, vault, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, NULL, ?5, ?5)')
+      .bind(id, u.id, name, 'xtream', now));
+    const profs = (await env.DB.prepare('SELECT id FROM profiles WHERE user_id = ?1').bind(u.id).all()).results;
+    for (const p of profs) stmts.push(env.DB.prepare('INSERT INTO profile_playlists (profile_id, playlist_id, user_id) VALUES (?1, ?2, ?3)').bind(p.id, id, u.id));
+    delivered = 'devices';
+  }
+  if (lineId) {
+    stmts.push(env.DB.prepare(
+      `INSERT INTO reseller_lines (user_id, line_id, name, expires_at, enabled, checked_at, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)
+       ON CONFLICT(user_id, line_id) DO UPDATE SET name = ?3, expires_at = COALESCE(?4, expires_at), enabled = ?5, checked_at = ?6`
+    ).bind(u.id, lineId, name, info.line?.expiresAt ?? null, info.line ? (info.line.enabled ? 1 : 0) : 1, now));
+  }
+  await env.DB.batch(stmts);
+  let devices = 0;
+  if (delivered === 'devices') {
+    // Every profile has it now: lock the login for each linked device that's waiting for it.
+    await reconcile(env, u.id);
+    const waiting = (await env.DB.prepare(
+      `SELECT t.device_id, d.pubkey FROM playlist_targets t JOIN devices d ON d.id = t.device_id
+        WHERE t.playlist_id = ?1 AND t.status = 'needs_login' AND d.revoked_at IS NULL AND d.pubkey IS NOT NULL`
+    ).bind(id).all()).results;
+    const up = [];
+    for (const w of waiting) {
+      up.push(env.DB.prepare(`UPDATE playlist_targets SET payload = ?1, status = 'waiting', error = NULL, version = version + 1, updated_at = ?2
+        WHERE playlist_id = ?3 AND device_id = ?4`).bind(JSON.stringify(await sealFor(w.pubkey, playlist, 'avidviewer-playlist:v1')), now, id, w.device_id));
+    }
+    if (up.length) await env.DB.batch(up);
+    devices = up.length;
+  }
+  await audit(env, admin, made ? 'reseller_add_new' : 'reseller_add_existing', { id: u.id, email: u.email },
+    `${name}${made ? `, ${b.months} month${Number(b.months) === 1 ? '' : 's'}` : ''}, ${delivered === 'account' ? 'locked for the account' : devices + ' device(s)'}`, reason);
+  const m3u = `${login.server}/get.php?username=${encodeURIComponent(login.username)}&password=${encodeURIComponent(login.password)}&type=m3u_plus&output=ts`;
+  return json({ ok: true, id, delivered, devices, expiresAt: info.line?.expiresAt ?? null, login: { server: login.server, username: login.username, password: login.password, m3u } });
+}
+
 export function handleResellerAdmin(request, env, p, admin, audit) {
   switch (p) {
     case '/api/admin/reseller/renew': return adminRenew(request, env, admin, audit);
     case '/api/admin/reseller/renewal': return adminRenewal(request, env, admin, audit);
     case '/api/admin/reseller/line': return adminLineStatus(request, env, admin, audit);
     case '/api/admin/reseller/hosts': return adminHosts(request, env, admin, audit);
+    case '/api/admin/reseller/add-line': return adminAddLine(request, env, admin, audit);
   }
   return null;
 }

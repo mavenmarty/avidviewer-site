@@ -193,7 +193,11 @@
     return (await fetch('/api/account/device-logins', { credentials: 'same-origin' }).then(function (x) { return x.json(); })).items || [];
   }
   /** A device's login for an account playlist the account has no login for; or for a playlist added on that device. */
-  function deviceHas(p) { return S.devicePlaylists.filter(function (x) { return x.remoteId === p.id && x.hasLogin; }); }
+  function deviceHas(p) {
+    var d = S.devicePlaylists.filter(function (x) { return x.remoteId === p.id && x.hasLogin; });
+    // Nov 21, 2026: a line added for you by Avid Viewer, locked for your account key until your passkey keeps it.
+    return p.accountSealed ? d.concat([{ remoteId: p.id, hasLogin: true, deviceId: 'account', name: 'Avid Viewer' }]) : d;
+  }
   /** Keeps, in the account, the logins devices sent for account playlists that had none. Returns how many. */
   async function importFromDevices() {
     var missing = S.playlists.filter(function (p) { return !p.kept && !p.removing && deviceHas(p).length; });
@@ -275,7 +279,7 @@
     } else if (importable.length || kept.length) {
       var lines = [];
       if (importable.length) lines.push('Logins for ' + names(importable.map(function (p) { return p.name; })) + ' are ready from ' +
-        names(Array.from(new Set(importable.map(function (p) { return (dev(deviceHas(p)[0].deviceId) || {}).name; })))) + '.');
+        names(Array.from(new Set(importable.map(function (p) { return (dev(deviceHas(p)[0].deviceId) || deviceHas(p)[0]).name; })))) + '.');
       if (kept.length) lines.push('Waiting for a login: ' + kept.map(function (p) { return p.playlist + ' on ' + p.device; }).join(', ') + '.');
       add(b, el('p', null, lines.join(' ') + ' Unlock with your passkey to keep them in your account and send them.'), unlockBtn('Unlock with passkey'));
     }
@@ -510,7 +514,7 @@
       catch (e) { show.disabled = false; say(VAULT_TEXT[e.code] || e.message, true); }
     });
     else if (p && deviceHas(p).length && S.accountKey) {
-      var from = dev(deviceHas(p)[0].deviceId) || {};
+      var from = dev(deviceHas(p)[0].deviceId) || deviceHas(p)[0];
       show = btn('Fill in from ' + from.name, 'btn btn-ghost btn-sm', async function () {
         show.disabled = true;
         try { var it = (await deviceLogins()).find(function (y) { return y.remoteId === p.id; }); fill(await openSealed(it.sealed)); show.hidden = true; say(''); }

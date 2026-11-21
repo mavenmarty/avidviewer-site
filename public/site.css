@@ -614,3 +614,7 @@ button.btn-ghost { background: transparent; color: var(--text); }
 /* Nov 21, 2026: Reseller lines card on Admin › Dashboard (full width) */
 #adm-rs { grid-column: 1 / -1; }
 #adm-rs-hosts input { flex: 1; min-width: 240px; background: var(--card-2); border: 1px solid var(--line-2); border-radius: 10px; color: var(--text); font: 15px var(--body); padding: 10px 12px; }
+
+/* Nov 21, 2026: Admin › People › Add a line */
+.adm-addline input { background: var(--card-2); border: 1px solid var(--line-2); border-radius: 8px; color: var(--text); font: 14px var(--body); padding: 6px 8px; min-width: 120px; }
+.adm-addline input[hidden], .adm-addline select[hidden] { display: none; }

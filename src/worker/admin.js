@@ -10,7 +10,7 @@
 import { json, body, randomToken, sendSignInLink } from './auth.js';
 import { backupsFor } from './devices.js';
 import { adminLicense, licenseFor, licensesByUser, endingSoon } from './licenses.js';
-import { adminReseller, adminLinesFor, handleResellerAdmin } from './reseller.js';
+import { adminReseller, adminLinesFor, handleResellerAdmin, adminPackages, hostsFor, configured as resellerOn } from './reseller.js';
 import { adminBeta, adminBetaChoose, adminBetaOffer } from './beta.js';
 import { adminReports, adminReport, adminTriage, adminBugNote, adminBugSync } from './reports.js';
 
@@ -105,7 +105,7 @@ async function userDetail(env, url) {
     passkeys: passkeys.map((p) => ({ name: p.name, createdAt: p.created_at, lastUsed: p.last_used })),
     notes: notes.map((n) => ({ by: n.admin_email, at: n.at, text: n.text })),
     backups: (await backupsFor(env, u.id)).map((x) => ({ name: x.name, createdAt: x.createdAt, size: x.size, removed: x.removed })),
-    reseller: await adminLinesFor(env, u.id),
+    reseller: { ...(await adminLinesFor(env, u.id)), on: resellerOn(env), hosts: await hostsFor(env), accountKey: Boolean(await env.DB.prepare('SELECT 1 FROM account_keys WHERE user_id = ?1').bind(u.id).first()) },
     log: log.map((a) => ({ at: a.at, by: a.admin_email, action: a.action, detail: a.detail, reason: a.reason })),
   });
 }
@@ -251,6 +251,7 @@ export async function handleAdminApi(request, env, url, user) {
       case '/api/admin/reports': return adminReports(env);
       case '/api/admin/reports/item': return adminReport(env, url);
       case '/api/admin/reseller': return adminReseller(env);
+      case '/api/admin/reseller/packages': return adminPackages(env);
     }
     return json({ error: 'Not found.' }, 404);
   }

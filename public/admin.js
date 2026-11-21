@@ -20,7 +20,7 @@
     if (!rows.length) { var e = el('tr'); var td = el('td', 'soft', 'Nothing yet.'); td.colSpan = head.length; e.appendChild(td); t.appendChild(e); }
     rows.forEach(function (r) { var row = el('tr'); r.cells.forEach(function (c) { row.appendChild(el('td', null, c)); }); if (r.onclick) { row.tabIndex = 0; row.addEventListener('click', r.onclick); row.addEventListener('keydown', function (e) { if (e.key === 'Enter') r.onclick(); }); } t.appendChild(row); });
   }
-  var ACTIONS = { suspend: 'Suspended', unsuspend: 'Lifted suspension', 'delete': 'Deleted account', revoke_tv: 'Signed out device', resend_link: 'Sent sign-in link', end_sessions: 'Signed out browsers', note: 'Added note', beta_choose: 'Chose for the beta', beta_remove: 'Took out of the beta', beta_offer: 'Offered beta build', report_add: 'Added a report to a bug', report_file: 'Filed a bug', report_not_app: 'Marked a report not an app problem', report_need_info: 'Asked for details', report_ignore: 'Ignored a report', report_undo: 'Undid an automatic match', report_reopen: 'Put a report back in the queue', bug_note: 'Changed what a bug says', license_grant: 'Granted a license', license_revoke: 'Revoked licenses', reseller_renew: 'Asked for a the provider renewal', reseller_renew_cancel: 'Cancelled a the provider renewal', reseller_renew_resolve: 'Resolved a the provider renewal', reseller_enable: 'Turned on a line', reseller_disable: 'Turned off a line', reseller_hosts: 'Changed the reseller addresses' };
+  var ACTIONS = { suspend: 'Suspended', unsuspend: 'Lifted suspension', 'delete': 'Deleted account', revoke_tv: 'Signed out device', resend_link: 'Sent sign-in link', end_sessions: 'Signed out browsers', note: 'Added note', beta_choose: 'Chose for the beta', beta_remove: 'Took out of the beta', beta_offer: 'Offered beta build', report_add: 'Added a report to a bug', report_file: 'Filed a bug', report_not_app: 'Marked a report not an app problem', report_need_info: 'Asked for details', report_ignore: 'Ignored a report', report_undo: 'Undid an automatic match', report_reopen: 'Put a report back in the queue', bug_note: 'Changed what a bug says', license_grant: 'Granted a license', license_revoke: 'Revoked licenses', reseller_renew: 'Asked for a line renewal', reseller_renew_cancel: 'Cancelled a line renewal', reseller_renew_resolve: 'Resolved a line renewal', reseller_enable: 'Turned on a line', reseller_disable: 'Turned off a line', reseller_hosts: 'Changed the reseller addresses', reseller_add_new: 'Added a new line', reseller_add_existing: 'Added an existing line' };
   var RSSTATUS = { pending: 'Waiting for a device', running: 'Renewing', done: 'Renewed', failed: 'Failed', unknown: 'Result unknown: check the panel', cancelled: 'Cancelled', expired: 'No device checked in' };
   // Nov 20, 2026: licenses. Lengths match LENGTHS in src/worker/licenses.js.
   var LENGTHS = [['7d', '7 days'], ['1m', '1 month'], ['3m', '3 months'], ['6m', '6 months'], ['1y', '1 year'], ['perpetual', 'Perpetual']];
@@ -114,6 +114,45 @@
     ask('Save the reseller addresses?', 'Devices check playlists on these addresses with the provider: ' + (v.trim() || '(none)'), false, false, function (reason) { return after(post('/api/admin/reseller/hosts', { hosts: v, reason: reason })); }, null);
   });
 
+  // Nov 21, 2026: Add a line to an account: a new one from the panel, or one that already exists there.
+  var shownLogin = null, packages = null;
+  function addLineForm(u, s8, reloadId) {
+    var f = el('form', 'adm-license adm-addline');
+    var mode = el('select'); mode.setAttribute('aria-label', 'New or existing');
+    [['new', 'New line'], ['existing', 'Existing line']].forEach(function (x) { var o = el('option', null, x[1]); o.value = x[0]; mode.appendChild(o); });
+    var name = el('input'); name.placeholder = 'Playlist name'; name.value = 'TV'; name.setAttribute('aria-label', 'Playlist name');
+    var pack = el('select'); pack.setAttribute('aria-label', 'Package'); pack.appendChild(el('option', null, 'Loading packages…'));
+    var months = el('select'); months.setAttribute('aria-label', 'Months');
+    [1, 3, 6, 12].forEach(function (n) { var o = el('option', null, plural(n, 'month')); o.value = String(n); months.appendChild(o); });
+    var server = el('input'); server.placeholder = 'Server'; server.setAttribute('aria-label', 'Server');
+    if (s8.hosts.length) server.value = 'http://' + s8.hosts[0];
+    var user = el('input'); user.placeholder = 'Username'; user.setAttribute('aria-label', 'Username'); user.autocomplete = 'off';
+    var pass = el('input'); pass.type = 'password'; pass.placeholder = 'Password'; pass.setAttribute('aria-label', 'Password'); pass.autocomplete = 'new-password';
+    var go = el('button', 'btn btn-primary', 'Add a line'); go.type = 'submit';
+    function show() { var n = mode.value === 'new'; pack.hidden = months.hidden = !n; server.hidden = user.hidden = pass.hidden = n; }
+    mode.addEventListener('change', show);
+    [mode, name, pack, months, server, user, pass, go].forEach(function (x) { f.appendChild(x); });
+    show();
+    (packages ? Promise.resolve(packages) : get('/api/admin/reseller/packages').then(function (r) { if (r._ok) packages = r.packages; return r._ok ? r.packages : r; })).then(function (list) {
+      pack.innerHTML = '';
+      if (!Array.isArray(list)) { pack.appendChild(el('option', null, list.error || 'No packages')); return; }
+      list.forEach(function (p) { var o = el('option', null, p.name); o.value = p.id; pack.appendChild(o); });
+    });
+    f.addEventListener('submit', function (e) {
+      e.preventDefault();
+      var n = mode.value === 'new';
+      var text = (n ? 'Makes a new ' + months.options[months.selectedIndex].text + ' line (' + ((pack.options[pack.selectedIndex] || {}).text || '?') + ') from your credits' : 'Attaches the line ' + user.value + ' (checked with the provider first)') +
+        ' and puts it in ' + u.email + '’s account as “' + (name.value || 'TV') + '”. ' +
+        (s8.accountKey ? 'Its login is locked for their passkey; they choose the profiles.' : 'They have no passkey set up, so its login is locked for each of their linked devices and every profile gets it.');
+      ask(n ? 'Add a new line?' : 'Add this line?', text, false, false, function (reason) {
+        var data = { userId: u.id, name: name.value, reason: reason, mode: mode.value };
+        if (n) { data.months = Number(months.value); data.pack = pack.value; } else { data.server = server.value; data.username = user.value; data.password = pass.value; }
+        return post('/api/admin/reseller/add-line', data).then(function (r) { if (r._ok) { shownLogin = { userId: u.id, login: r.login, delivered: r.delivered, devices: r.devices }; pass.value = ''; } return r; });
+      }, reloadId);
+    });
+    return f;
+  }
+
   var qTimer;
   $('adm-q').addEventListener('input', function () { clearTimeout(qTimer); qTimer = setTimeout(loadUsers, 250); });
   $('adm-status').addEventListener('change', loadUsers);
@@ -170,8 +209,18 @@
 
       // lines confirmed in this account: renew (from your credits, at a device's next check-in), turn on/off.
       var s8 = d.reseller || { lines: [], renewals: [] };
-      if (s8.lines.length || s8.renewals.length) {
+      if (s8.lines.length || s8.renewals.length || s8.on) {
         box.appendChild(el('h3', null, 'Reseller lines'));
+        // The login of a line just added, shown once (never stored by the website).
+        if (shownLogin && shownLogin.userId === u.id) {
+          var lg = el('div', 'setup-card');
+          lg.appendChild(el('p', null, 'Added. Pass these on to the customer if they need them; they won\u2019t be shown again.'));
+          [['Server', shownLogin.login.server], ['Username', shownLogin.login.username], ['Password', shownLogin.login.password], ['M3U link', shownLogin.login.m3u]]
+            .forEach(function (x) { var p = el('p', 'mono'); p.appendChild(el('strong', null, x[0] + ': ')); p.appendChild(document.createTextNode(x[1])); lg.appendChild(p); });
+          lg.appendChild(el('p', 'fineprint', shownLogin.delivered === 'account' ? 'It\u2019s in their account, locked for their passkey: their Playlists page keeps it the next time they unlock, and they choose the profiles.' : 'Sent to ' + plural(shownLogin.devices, 'linked device') + ' (every profile has it; they can change that on their Playlists page).'));
+          box.appendChild(lg); shownLogin = null;
+        }
+        if (s8.on) box.appendChild(addLineForm(u, s8, id));
         var sl = el('ul', 'rows');
         s8.lines.forEach(function (l) {
           var li = el('li');
