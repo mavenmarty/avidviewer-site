@@ -41,17 +41,23 @@ export function hostOf(s) {
 
 /** One panel call. Never logs the URL (it carries the reseller key, and sometimes a login). */
 export async function panel(env, params) {
-  const u = new URL(env.RESELLER_API_BASE);
+  let u;
+  try { u = new URL(String(env.RESELLER_API_BASE).trim().replace(/^["']|["']$/g, '')); }
+  catch { return { reached: false, why: 'RESELLER_API_BASE is not a valid web address' }; }
   for (const [k, v] of Object.entries(params)) u.searchParams.set(k, String(v));
-  u.searchParams.set('api_key', env.RESELLER_API_KEY);
+  u.searchParams.set('api_key', String(env.RESELLER_API_KEY).trim());
   let r;
-  try { r = await fetch(u.toString(), { headers: { accept: 'application/json' }, signal: AbortSignal.timeout(15_000) }); }
-  catch { return { reached: false }; }
+  try { r = await fetch(u.toString(), { headers: { accept: 'application/json', 'user-agent': 'Mozilla/5.0 (compatible; AvidViewer/1.0)' }, signal: AbortSignal.timeout(15_000) }); }
+  catch (e) { return { reached: false, why: e?.name === 'TimeoutError' ? 'no answer within 15 seconds' : 'connection failed (' + String(e?.message || e?.name || 'error').slice(0, 80) + ')' }; }
   const text = await r.text().catch(() => '');
   let data = null;
   try { data = JSON.parse(text); } catch { data = null; }
   if (Array.isArray(data) && params.action !== 'bouquet') data = data[0] || null;
-  return { reached: true, httpOk: r.ok, data };
+  // Why it isn't usable, for the admin card: status and type only, plus a short start of the body without the key.
+  const key = String(env.RESELLER_API_KEY || '').trim();
+  const peek = text.slice(0, 120).replace(/\s+/g, ' ').split(key || '\u0000').join('…');
+  const why = data ? null : `HTTP ${r.status}, ${r.headers.get('content-type') || 'no content type'}${peek ? ': "' + peek + '"' : ', empty answer'}`;
+  return { reached: true, httpOk: r.ok, data, why };
 }
 
 function truthy(v) { return v === true || v === 1 || /^(true|1|ok|success|enabled?|active)$/i.test(String(v ?? '')); }
@@ -241,7 +247,9 @@ export async function adminReseller(env) {
   let reseller = null;
   if (configured(env)) {
     const r = await panel(env, { action: 'reseller' });
-    reseller = r.reached && r.data ? { credits: r.data.credits ?? null, enabled: r.data.enabled == null ? null : truthy(r.data.enabled) } : { error: "Couldn't reach the provider." };
+    reseller = r.reached && r.data
+      ? { credits: r.data.credits ?? null, enabled: r.data.enabled == null ? null : truthy(r.data.enabled), refused: r.data.status != null && !truthy(r.data.status) ? String(r.data.message ?? r.data.messasge ?? 'no reason given').slice(0, 120) : null }
+      : { error: "Couldn't reach the provider: " + (r.why || 'unknown') + '.' };
   }
   const renewals = (await env.DB.prepare(
     `SELECT r.id, r.status, r.months, r.created_at, r.done_at, r.message, r.requested_by, u.email, l.name FROM reseller_renewals r

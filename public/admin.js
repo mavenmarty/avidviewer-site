@@ -94,11 +94,11 @@
       var st = $('adm-rs-state');
       if (!d._ok) { st.textContent = d.error || "Couldn't load."; return; }
       var bits = [d.configured ? 'Reseller key set' : 'OFF: RESELLER_API_KEY / RESELLER_API_BASE secrets missing'];
-      if (d.reseller) bits.push(d.reseller.error ? d.reseller.error : 'Credits: ' + (d.reseller.credits == null ? '?' : d.reseller.credits) + (d.reseller.enabled === false ? ' (reseller account turned off)' : ''));
+      if (d.reseller) bits.push(d.reseller.error ? d.reseller.error : d.reseller.refused ? 'The panel refused the key: ' + d.reseller.refused : 'Credits: ' + (d.reseller.credits == null ? '?' : d.reseller.credits) + (d.reseller.enabled === false ? ' (reseller account turned off)' : ''));
       bits.push(plural(d.lines || 0, 'confirmed line'));
       bits.push(d.hosts.length ? 'Addresses: ' + d.hosts.join(', ') : 'No server addresses yet');
       st.textContent = bits.join(' · ');
-      st.className = !d.configured || !d.hosts.length || (d.reseller && (d.reseller.error || (d.reseller.credits != null && Number(d.reseller.credits) < 5))) ? 'adm-warn' : 'soft';
+      st.className = !d.configured || !d.hosts.length || (d.reseller && (d.reseller.error || d.reseller.refused || (d.reseller.credits != null && Number(d.reseller.credits) < 5))) ? 'adm-warn' : 'soft';
       $('adm-rs-hosts-in').value = d.hosts.join(', ');
       table($('adm-rs-renewals'), ['Account', 'Line', 'Renewal', 'Status', ''], (d.renewals || []).map(function (r) {
         var act = r.status === 'pending' ? 'Cancel' : r.status === 'unknown' ? 'Resolve' : '';
