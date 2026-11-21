@@ -1115,8 +1115,8 @@
     if (!q.kids) {
       var gs = el('section', 'mg-card'); b.appendChild(gs);
       add(gs, el('h2', null, 'Movies and Series'),
-        check('Sort Movies and Series by genre', D.genres === true, function (on) { D.genres = on; save(); }),
-        el('p', 'fineprint', 'On: ' + q.name + '’s Movies and Series list TMDB genres (Action, Comedy, Drama…) in place of the provider’s categories. Needs a TMDB key. Each TV looks titles up by name and year.'));
+        check('Sort Movies and Series by genre', D.genres !== false, function (on) { D.genres = on; save(); }),
+        el('p', 'fineprint', 'On by default: ' + q.name + '’s Movies and Series list TMDB genres (Action, Comedy, Drama…) in place of the provider’s categories. Needs a TMDB key. Each TV looks titles up by name and year.'));
     }
     var ml = el('section', 'mg-card'); b.appendChild(ml);
     function drawList() {
