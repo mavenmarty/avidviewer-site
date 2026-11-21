@@ -230,7 +230,15 @@
           var li = el('li');
           var ended = l.expiresAt && l.expiresAt <= Date.now();
           li.appendChild(el('span', !l.enabled || ended ? 'adm-warn' : null, (l.name || 'line') + ': ' + (!l.enabled ? 'turned off' : ended ? 'ended ' + day(l.expiresAt) : l.expiresAt ? 'until ' + day(l.expiresAt) : 'active')));
-          li.appendChild(el('span', 'soft', 'line ' + l.lineId + ' · on ' + plural(l.devices, 'device') + ' · checked ' + when(l.checkedAt)));
+          li.appendChild(el('span', 'soft', 'line ' + l.lineId + ' · checked ' + when(l.checkedAt)));
+          // Where it stands: the account's playlist, its profiles, and each device it goes to through them.
+          var where = el('div', 'adm-line-where');
+          var pl = l.playlist;
+          where.appendChild(el('p', pl && pl.waitingForPasskey ? 'adm-warn' : 'soft', !pl ? 'Not in the account as a playlist (typed on a device).'
+            : 'Playlist \u201c' + pl.name + '\u201d: ' + (pl.waitingForPasskey ? 'waiting for them to unlock their Playlists page with their passkey to keep the login' : pl.kept ? 'login kept in the account' : 'login sent to their devices')));
+          where.appendChild(el('p', l.profiles.length ? 'soft' : 'adm-warn', 'Profiles: ' + (l.profiles.length ? l.profiles.join(', ') : 'none yet (they choose them on their Playlists page)')));
+          where.appendChild(el('p', l.devices.length ? 'soft' : 'adm-warn', 'Devices: ' + (l.devices.length ? l.devices.map(function (d) { return d.name + ' (' + d.state + (d.error ? ': ' + d.error : '') + ')'; }).join(', ') : 'none yet (it reaches a device when a profile on it has the playlist)')));
+          li.appendChild(where);
           var f = el('form', 'adm-license');
           var m = el('select'); m.setAttribute('aria-label', 'Months');
           [1, 3, 6, 12].forEach(function (n) { var o = el('option', null, plural(n, 'month')); o.value = String(n); m.appendChild(o); });
@@ -238,7 +246,7 @@
           f.appendChild(m); f.appendChild(rb);
           f.addEventListener('submit', function (e) {
             e.preventDefault();
-            ask('Renew for ' + plural(Number(m.value), 'month') + '?', 'Uses your reseller credits. It happens the next time a device with this line checks in' + (l.devices ? '' : ' (no device has it right now)') + '.', false, false, function (reason) { return post('/api/admin/reseller/renew', { userId: u.id, lineId: l.lineId, months: Number(m.value), reason: reason }); }, id);
+            ask('Renew for ' + plural(Number(m.value), 'month') + '?', 'Uses your reseller credits. It happens the next time a device with this line checks in' + (l.devices.length ? '' : ' (no device has it right now)') + '.', false, false, function (reason) { return post('/api/admin/reseller/renew', { userId: u.id, lineId: l.lineId, months: Number(m.value), reason: reason }); }, id);
           });
           var tb = el('button', 'linkish', l.enabled ? 'Turn off at the provider' : 'Turn on at the provider'); tb.type = 'button';
           tb.addEventListener('click', function () {

@@ -632,3 +632,7 @@ button.btn-ghost { background: transparent; color: var(--text); }
 .adm-modal .adm-note { display: flex; gap: 10px; align-items: flex-start; }
 .adm-modal .adm-note textarea { flex: 1; }
 .adm-modal .adm-note .btn { width: auto; }
+
+/* Nov 21, 2026: where a reseller line stands (account playlist, profiles, devices) */
+.adm-line-where { flex-basis: 100%; display: flex; flex-direction: column; gap: 2px; margin: 6px 0; }
+.adm-line-where p { margin: 0; font-size: 13px; }

@@ -261,17 +261,39 @@ export async function adminReseller(env) {
   return json({ configured: configured(env), hosts, reseller, lines, renewals: renewals.map((r) => ({ id: r.id, status: r.status, months: r.months, createdAt: r.created_at, doneAt: r.done_at, message: r.message, by: r.requested_by, email: r.email, name: r.name })) });
 }
 
-/** For Admin › People › an account. */
+/**
+ * For Admin › People › an account: each line with where it stands. Its account playlist (the one Add a line made, or
+ * the one a device that confirmed the line has it as), whether the account has kept its login, the profiles that have
+ * it, and every device it goes to through those profiles (with how far it got), plus devices that confirmed it.
+ */
+const TARGET_STATE = { done: 'has it', waiting: 'sending', needs_login: 'waiting for their passkey', needs_update: 'needs an app update', failed: "couldn't add it" };
 export async function adminLinesFor(env, userId) {
-  const lines = (await env.DB.prepare(
-    `SELECT l.line_id, l.name, l.expires_at, l.enabled, l.checked_at,
-            (SELECT COUNT(*) FROM reseller_line_devices ld JOIN devices d ON d.id = ld.device_id AND d.revoked_at IS NULL
-              WHERE ld.user_id = l.user_id AND ld.line_id = l.line_id) AS devices
-       FROM reseller_lines l WHERE l.user_id = ?1 ORDER BY l.name`
-  ).bind(userId).all()).results;
+  const all = (sql) => env.DB.prepare(sql).bind(userId).all().then((r) => r.results);
+  const [lines, confirmed, playlists, profs, targets] = await Promise.all([
+    all('SELECT line_id, name, expires_at, enabled, checked_at, playlist_id FROM reseller_lines WHERE user_id = ?1 ORDER BY name'),
+    all(`SELECT ld.line_id, ld.device_id, d.name AS device, dp.remote_id FROM reseller_line_devices ld JOIN devices d ON d.id = ld.device_id AND d.revoked_at IS NULL
+           LEFT JOIN device_playlists dp ON dp.device_id = ld.device_id AND dp.local_id = ld.local_id WHERE ld.user_id = ?1`),
+    all('SELECT id, name, (vault IS NOT NULL) AS kept, (sealed IS NOT NULL) AS sealed, removing FROM account_playlists WHERE user_id = ?1'),
+    all('SELECT pp.playlist_id, pr.name FROM profile_playlists pp JOIN profiles pr ON pr.id = pp.profile_id WHERE pp.user_id = ?1 ORDER BY pr.sort, pr.name'),
+    all(`SELECT t.playlist_id, t.device_id, t.action, t.status, t.error, d.name AS device FROM playlist_targets t JOIN devices d ON d.id = t.device_id AND d.revoked_at IS NULL
+           WHERE t.user_id = ?1 AND t.action <> 'remove'`),
+  ]);
   const renewals = (await env.DB.prepare('SELECT id, line_id, status, months, created_at, done_at, message, requested_by, expires_before, expires_after FROM reseller_renewals WHERE user_id = ?1 ORDER BY created_at DESC LIMIT 30').bind(userId).all()).results;
   return {
-    lines: lines.map((l) => ({ lineId: l.line_id, name: l.name, expiresAt: l.expires_at, enabled: Boolean(l.enabled), checkedAt: l.checked_at, devices: l.devices })),
+    lines: lines.map((l) => {
+      const conf = confirmed.filter((c) => c.line_id === l.line_id);
+      const pid = l.playlist_id || conf.map((c) => c.remote_id).find(Boolean) || null;
+      const pl = playlists.find((p) => p.id === pid && !p.removing) || null;
+      const devices = new Map();
+      for (const t of targets.filter((t) => t.playlist_id === pid)) devices.set(t.device_id, { name: t.device, state: TARGET_STATE[t.status] || t.status, error: t.error || null });
+      for (const c of conf) devices.set(c.device_id, { name: c.device, state: 'has it (confirmed)' });
+      return {
+        lineId: l.line_id, name: l.name, expiresAt: l.expires_at, enabled: Boolean(l.enabled), checkedAt: l.checked_at,
+        playlist: pl ? { name: pl.name, kept: Boolean(pl.kept), waitingForPasskey: !pl.kept && Boolean(pl.sealed) } : null,
+        profiles: pl ? profs.filter((p) => p.playlist_id === pl.id).map((p) => p.name) : [],
+        devices: [...devices.values()],
+      };
+    }),
     renewals: renewals.map((r) => ({ id: r.id, lineId: r.line_id, status: r.status, months: r.months, createdAt: r.created_at, doneAt: r.done_at, message: r.message, by: r.requested_by, expiresBefore: r.expires_before, expiresAfter: r.expires_after })),
   };
 }
@@ -448,9 +470,9 @@ async function adminAddLine(request, env, admin, audit) {
   }
   if (lineId) {
     stmts.push(env.DB.prepare(
-      `INSERT INTO reseller_lines (user_id, line_id, name, expires_at, enabled, checked_at, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)
-       ON CONFLICT(user_id, line_id) DO UPDATE SET name = ?3, expires_at = COALESCE(?4, expires_at), enabled = ?5, checked_at = ?6`
-    ).bind(u.id, lineId, name, info.line?.expiresAt ?? null, info.line ? (info.line.enabled ? 1 : 0) : 1, now));
+      `INSERT INTO reseller_lines (user_id, line_id, name, expires_at, enabled, checked_at, created_at, playlist_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6, ?7)
+       ON CONFLICT(user_id, line_id) DO UPDATE SET name = ?3, expires_at = COALESCE(?4, expires_at), enabled = ?5, checked_at = ?6, playlist_id = ?7`
+    ).bind(u.id, lineId, name, info.line?.expiresAt ?? null, info.line ? (info.line.enabled ? 1 : 0) : 1, now, id));
   }
   await env.DB.batch(stmts);
   let devices = 0;
