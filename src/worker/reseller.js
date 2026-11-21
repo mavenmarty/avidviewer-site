@@ -11,7 +11,8 @@
 //     if the panel doesn't answer after it was sent, it is marked 'unknown' and never retried by itself.
 //   - Turning a line on or off (device_status) needs only the line id: an admin action, with a reason.
 //
-// Troubleshooting on the Account page (any provider): each device's last channel load per playlist, and
+// Troubleshooting on the Account page (any provider): each device's last channel load per playlist (with the
+// subscription's end date when the provider gives one), and
 // "Reload channels now" / "Check my subscription", which the device picks up at its next check-in.
 import { json, randomToken, body } from './auth.js';
 import { deviceFor } from './devices.js';
@@ -180,9 +181,10 @@ async function tvLoadStatus(request, env, d) {
     const problem = ok ? null : (PROBLEMS.includes(p?.problem) ? p.problem : 'other');
     const at = Number.isFinite(p?.at) && p.at > now - 30 * DAY && p.at <= now + 60_000 ? p.at : now;
     stmts.push(env.DB.prepare(
-      `INSERT INTO device_load_status (device_id, local_id, user_id, name, ok, channels, problem, detail, at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
-       ON CONFLICT(device_id, local_id) DO UPDATE SET user_id = ?3, name = ?4, ok = ?5, channels = ?6, problem = ?7, detail = ?8, at = ?9`
-    ).bind(d.id, localId, d.user_id, clip(p?.name, 80) || null, ok ? 1 : 0, Number.isFinite(p?.channels) ? Math.max(0, Math.floor(p.channels)) : null, problem, clip(p?.detail, 200) || null, at));
+      `INSERT INTO device_load_status (device_id, local_id, user_id, name, ok, channels, problem, detail, at, expires_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+       ON CONFLICT(device_id, local_id) DO UPDATE SET user_id = ?3, name = ?4, ok = ?5, channels = ?6, problem = ?7, detail = ?8, at = ?9, expires_at = ?10`
+    ).bind(d.id, localId, d.user_id, clip(p?.name, 80) || null, ok ? 1 : 0, Number.isFinite(p?.channels) ? Math.max(0, Math.floor(p.channels)) : null, problem, clip(p?.detail, 200) || null, at,
+      Number.isFinite(p?.expiresAt) && p.expiresAt > 0 ? Math.floor(p.expiresAt) : null));
   }
   // Playlists the device no longer has.
   const keep = list.map((p) => clip(p?.localId, 80)).filter(Boolean);
@@ -208,13 +210,13 @@ export async function handleResellerTvApi(request, env, p) {
 export async function accountTroubleshooting(env, userId) {
   const lines = (await env.DB.prepare('SELECT line_id, name, expires_at, enabled, checked_at FROM reseller_lines WHERE user_id = ?1 ORDER BY name').bind(userId).all()).results;
   const loads = (await env.DB.prepare(
-    `SELECT s.device_id, s.local_id, s.name, s.ok, s.channels, s.problem, s.at FROM device_load_status s
+    `SELECT s.device_id, s.local_id, s.name, s.ok, s.channels, s.problem, s.at, s.expires_at FROM device_load_status s
        JOIN devices d ON d.id = s.device_id AND d.revoked_at IS NULL WHERE s.user_id = ?1 ORDER BY s.name`
   ).bind(userId).all()).results;
   const pending = (await env.DB.prepare("SELECT id, reload_requested_at, check_requested_at FROM devices WHERE user_id = ?1 AND revoked_at IS NULL").bind(userId).all()).results;
   return {
     reseller: lines.map((l) => ({ name: l.name || 'Subscription', expiresAt: l.expires_at, enabled: Boolean(l.enabled), checkedAt: l.checked_at })),
-    loads: loads.map((x) => ({ deviceId: x.device_id, name: x.name || 'Playlist', ok: Boolean(x.ok), channels: x.channels, problem: x.problem, at: x.at })),
+    loads: loads.map((x) => ({ deviceId: x.device_id, name: x.name || 'Playlist', ok: Boolean(x.ok), channels: x.channels, problem: x.problem, at: x.at, expiresAt: x.expires_at })),
     requested: Object.fromEntries(pending.map((x) => [x.id, { reload: Boolean(x.reload_requested_at), check: Boolean(x.check_requested_at) }])),
   };
 }

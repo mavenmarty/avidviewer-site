@@ -284,6 +284,8 @@
       var li = el('li');
       li.appendChild(el('span', null, (names[x.deviceId] || 'A device') + ' · ' + x.name));
       li.appendChild(el('span', x.ok ? 'soft' : 'mg-warn', (x.ok ? (x.channels != null ? x.channels.toLocaleString() + ' channels' : 'Loaded') : (PROBLEM[x.problem] || PROBLEM.other)) + ' · ' + ago(x.at)));
+      // The subscription's end date, when the provider gives one (warned within 30 days).
+      if (x.expiresAt) li.appendChild(el('span', x.expiresAt - Date.now() < 30 * 864e5 ? 'mg-warn' : 'soft', (x.expiresAt <= Date.now() ? 'Subscription ended ' : 'Subscription ends ') + dd(x.expiresAt) + (x.expiresAt <= Date.now() ? '. Contact your service provider to renew.' : '')));
       ul.appendChild(li);
     });
     var waiting = Object.keys(T.requested || {}).filter(function (k) { return T.requested[k].reload || T.requested[k].check; }).length;

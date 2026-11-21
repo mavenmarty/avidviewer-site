@@ -60,6 +60,7 @@ CREATE TABLE IF NOT EXISTS device_load_status (
   channels   INTEGER,
   problem    TEXT,              -- login | expired | unreachable | empty | other
   detail     TEXT,
+  expires_at INTEGER,           -- when the subscription ends, as the provider tells the device (ms), or NULL
   at         INTEGER NOT NULL,
   PRIMARY KEY (device_id, local_id)
 );
