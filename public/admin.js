@@ -293,6 +293,9 @@
       box.appendChild(ss);
       box.appendChild(el('p', 'soft', 'Backups: ' + (d.backups.length ? d.backups.map(function (x) { return x.name + (x.removed ? ' (removed device)' : '') + ', ' + when(x.createdAt) + ', ' + Math.max(1, Math.round(x.size / 1024)) + ' KB'; }).join('; ') : 'none')));
       box.appendChild(el('p', 'soft', 'Passkeys: ' + (d.passkeys.length ? d.passkeys.map(function (p) { return p.name; }).join(', ') : 'none')));
+      (d.passkeyFailures || []).forEach(function (f) {
+        box.appendChild(el('p', 'soft', 'Passkey set-up failed ' + new Date(f.at).toLocaleString() + ' · ' + (f.browser || 'a browser') + ' · ' + (f.step || '') + ': ' + (f.error || 'error') + (f.message ? ' (' + f.message + ')' : '')));
+      });
 
       box.appendChild(el('h3', null, 'Notes'));
       var nf = el('form', 'adm-note');

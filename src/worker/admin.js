@@ -89,12 +89,13 @@ async function userDetail(env, url) {
   const counts = await env.DB.prepare(`SELECT (SELECT COUNT(*) FROM account_playlists p WHERE p.user_id = ?1 AND p.removing = 0) AS playlists,
             (SELECT COUNT(*) FROM device_playlists dp JOIN devices dv ON dv.id = dp.device_id AND dv.revoked_at IS NULL
               WHERE dp.user_id = ?1 AND dp.remote_id IS NULL) AS device_only`).bind(u.id).first();
-  const [devices, sessions, passkeys, notes, log] = await Promise.all([
+  const [devices, sessions, passkeys, notes, log, pkFails] = await Promise.all([
     all('SELECT id, name, model, app_version, created_at, last_seen, revoked_at FROM devices WHERE user_id = ?1 ORDER BY revoked_at IS NOT NULL, last_seen DESC'),
     all('SELECT label, method, created_at, last_seen, expires_at FROM sessions WHERE user_id = ?1 ORDER BY last_seen DESC'),
     all('SELECT name, created_at, last_used FROM passkeys WHERE user_id = ?1 ORDER BY created_at'),
     all('SELECT admin_email, at, text FROM admin_notes WHERE user_id = ?1 ORDER BY at DESC'),
     all('SELECT at, admin_email, action, detail, reason FROM admin_audit WHERE target_id = ?1 ORDER BY at DESC LIMIT 50'),
+    all('SELECT at, browser, step, error, message FROM passkey_failures WHERE user_id = ?1 ORDER BY at DESC LIMIT 10').catch(() => []),
   ]);
   return json({
     user: { id: u.id, email: u.email, status: u.status, role: u.role, createdAt: u.created_at, lastSignIn: u.last_sign_in, watchHistory: Boolean(u.watch_history), playlists: counts?.playlists || 0, deviceOnlyPlaylists: counts?.device_only || 0, license: await licenseFor(env, u.id) },
@@ -103,6 +104,7 @@ async function userDetail(env, url) {
     devices: devices.map((d) => ({ id: d.id, name: d.name, model: d.model, appVersion: d.app_version, linkedAt: d.created_at, lastSeen: d.last_seen, removedAt: d.revoked_at })),
     sessions: sessions.filter((s) => s.expires_at > Date.now()).map((s) => ({ label: s.label, method: s.method, createdAt: s.created_at, lastSeen: s.last_seen })),
     passkeys: passkeys.map((p) => ({ name: p.name, createdAt: p.created_at, lastUsed: p.last_used })),
+    passkeyFailures: pkFails.map((f) => ({ at: f.at, browser: f.browser, step: f.step, error: f.error, message: f.message })),
     notes: notes.map((n) => ({ by: n.admin_email, at: n.at, text: n.text })),
     backups: (await backupsFor(env, u.id)).map((x) => ({ name: x.name, createdAt: x.createdAt, size: x.size, removed: x.removed })),
     reseller: { ...(await adminLinesFor(env, u.id)), on: resellerOn(env), hosts: await hostsFor(env), accountKey: Boolean(await env.DB.prepare('SELECT 1 FROM account_keys WHERE user_id = ?1').bind(u.id).first()) },

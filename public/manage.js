@@ -113,11 +113,19 @@
     var WA = window.SimpleWebAuthnBrowser;
     if (!WA || !WA.browserSupportsWebAuthn()) throw VaultError('nopasskey');
     say('Create your passkey: follow your browser (Face ID, fingerprint or your device PIN).');
-    var o = await post('/api/passkeys/register/options', {});
+    var P = window.AvidPasskey;
+    // Nov 22: options fetched before the tap; a step with no tap left gets a button of its own (Safari on iPhone).
+    var o = P ? await P.options('register') : await post('/api/passkeys/register/options', {});
     if (!o._ok) throw new Error(o.error || 'The passkey couldn\'t be started.');
     var resp;
-    try { resp = await WA.startRegistration({ optionsJSON: o.options }); }
-    catch (e) { throw VaultError(e && e.name === 'InvalidStateError' ? 'other' : 'cancelled'); }
+    try {
+      var start = function () { return WA.startRegistration({ optionsJSON: o.options }); };
+      resp = await (P ? P.fromTap('Create your passkey', 'Your logins are kept locked with a passkey. Your browser asks you to save one for avidviewer.app next (Face ID, fingerprint or your device code).', 'Create passkey', start) : start());
+    }
+    catch (e) {
+      if (P) { P.report('playlists', e); var x = VaultError('explained'); x.message = P.explain(e); throw x; }
+      throw VaultError(e && e.name === 'InvalidStateError' ? 'other' : 'cancelled');
+    }
     var v = await post('/api/passkeys/register/verify', { challengeId: o.challengeId, response: resp });
     if (!v._ok) throw new Error(v.error || 'The passkey couldn\'t be saved.');
     S.passkeys = (S.passkeys || 0) + 1;
@@ -127,15 +135,24 @@
   async function unlock() {
     if (V) return V;
     if (!window.PublicKeyCredential || !navigator.credentials) throw VaultError('nopasskey');
-    if (!S.passkeys) await createPasskey();
+    var made = false;
+    if (!S.passkeys) { await createPasskey(); made = true; }
     var salt = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode('avidviewer-vault-prf:v1')));
     var cred;
-    try {
-      cred = await navigator.credentials.get({ publicKey: {
+    var P = window.AvidPasskey;
+    var ask = function () {
+      return navigator.credentials.get({ publicKey: {
         challenge: crypto.getRandomValues(new Uint8Array(32)), rpId: location.hostname, userVerification: 'required', timeout: 120000,
         extensions: { prf: { eval: { first: salt } } },
       } });
-    } catch (e) { throw VaultError(e && e.name === 'NotAllowedError' ? 'cancelled' : 'nopasskey'); }
+    };
+    try {
+      // Right after making the passkey there's no tap left to open it with: a button of its own.
+      cred = await (P ? P.fromTap(made ? 'Passkey created' : 'Unlock your logins', made ? 'One more step: confirm the passkey you just made, to lock your logins with it.' : 'Your browser asks for your passkey next.', made ? 'Confirm passkey' : 'Use my passkey', ask, made) : ask());
+    } catch (e) {
+      if (P && made) P.report('confirm', e);
+      throw VaultError(e && e.name === 'NotAllowedError' ? 'cancelled' : 'nopasskey');
+    }
     var res = cred && cred.getClientExtensionResults ? cred.getClientExtensionResults() : {};
     var out = res && res.prf && res.prf.results && res.prf.results.first;
     if (!out) throw VaultError('noprf');
@@ -301,6 +318,8 @@
     var r = await fetch('/api/account/manage', { credentials: 'same-origin' });
     if (r.status === 401) { location.href = '/signin/?next=' + encodeURIComponent(location.pathname); return; }
     S = await r.json();
+    // Nov 22: no passkey yet: its options are fetched ahead, so creating one starts straight from the tap (Safari).
+    if (!S.passkeys && window.AvidPasskey) window.AvidPasskey.keepReady('register');
     $('mg-loading').hidden = true; $('mg-body').hidden = false;
     window.dispatchEvent(new Event('avid:changed'));
     renderPending();
@@ -953,7 +972,7 @@
   function unlockCard(q, text, after) {
     var c = el('section', 'mg-card');
     add(c, el('p', 'soft', text), btn('Unlock with passkey', 'btn btn-primary', async function () {
-      try { await historyKey(); after(); } catch (e) { say(e.code ? VAULT_TEXT[e.code] : (e.message || 'Couldn’t unlock.'), true); }
+      try { await historyKey(); after(); } catch (e) { say((e.code && VAULT_TEXT[e.code]) || e.message || 'Couldn’t unlock.', true); }
     }));
     return c;
   }

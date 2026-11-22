@@ -9,6 +9,7 @@
 //   POST /api/account/sessions/end  {id} | {others: true}
 //   POST /api/account/delete        {confirm: <email>} → deletes the account and every session and passkey
 //   POST /api/passkeys/register/options | /verify      → add a passkey (signed in)
+//   POST /api/passkeys/register/failed                  → note why a passkey set-up failed in the browser (admin view)
 //   POST /api/passkeys/login/options | /verify         → sign in with a passkey
 //   POST /api/passkeys/delete       {id}
 //
@@ -258,6 +259,19 @@ async function passkeyRegisterVerify(request, env, url, user) {
   return json({ ok: true });
 }
 
+/** The browser says a passkey set-up failed: its error name and message (no other detail), for the admin view. */
+async function passkeyFailed(request, env, user) {
+  const b = await body(request);
+  const now = Date.now();
+  await env.DB.prepare('DELETE FROM passkey_failures WHERE at < ?1').bind(now - 30 * 86400000).run();
+  const n = await env.DB.prepare('SELECT COUNT(*) AS n FROM passkey_failures WHERE user_id = ?1 AND at > ?2').bind(user.id, now - 3600000).first();
+  if ((n?.n || 0) >= 20) return json({ ok: true });
+  await env.DB.prepare('INSERT INTO passkey_failures (user_id, at, browser, step, error, message) VALUES (?1, ?2, ?3, ?4, ?5, ?6)')
+    .bind(user.id, now, labelFor(request.headers.get('user-agent') || ''), String(b?.step || '').slice(0, 20),
+      String(b?.error || '').slice(0, 60), String(b?.message || '').slice(0, 300)).run();
+  return json({ ok: true });
+}
+
 async function passkeyLoginOptions(env, url) {
   const options = await generateAuthenticationOptions({ rpID: rp(url).rpID, userVerification: 'preferred' });
   return json({ challengeId: await saveChallenge(env, options.challenge, 'login'), options });
@@ -470,6 +484,7 @@ export async function handleAccountApi(request, env, realUrl) {
     case '/api/link/setup-token': return linkSetupToken(env, user);
     case '/api/passkeys/register/options': return passkeyRegisterOptions(env, url, user);
     case '/api/passkeys/register/verify': return passkeyRegisterVerify(request, env, url, user);
+    case '/api/passkeys/register/failed': return passkeyFailed(request, env, user);
     case '/api/passkeys/delete': {
       const b = await body(request);
       await env.DB.prepare('DELETE FROM passkeys WHERE id = ?1 AND user_id = ?2').bind(String(b?.id || ''), user.id).run();

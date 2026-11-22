@@ -17,10 +17,16 @@
   async function passkeySignIn(msg, next) {
     if (!WA || !WA.browserSupportsWebAuthn()) { say(msg, "This browser doesn't support passkeys. Use the email link instead.", true); return; }
     say(msg, 'Waiting for your passkey…');
-    var o = await post('/api/passkeys/login/options');
+    var P = window.AvidPasskey;
+    // Nov 22: options fetched before the tap (Safari opens a passkey only straight from a tap).
+    var o = P ? await P.options('login') : await post('/api/passkeys/login/options');
     if (!o._ok) { say(msg, o.error || 'Something went wrong.', true); return; }
     var resp;
-    try { resp = await WA.startAuthentication({ optionsJSON: o.options }); } catch (e) { say(msg, 'No passkey was used. If your browser said there\'s no passkey on this device, sign in with the email link above, then add one on your Account page (Passkeys › Add a passkey).', true); return; }
+    try {
+      var start = function () { return WA.startAuthentication({ optionsJSON: o.options }); };
+      resp = await (P ? P.fromTap('Sign in with your passkey', 'Your browser asks for your passkey next.', 'Use my passkey', start) : start());
+    } catch (e) {
+      if (P && P.inApp) { say(msg, P.explain(e), true); return; } say(msg, 'No passkey was used. If your browser said there\'s no passkey on this device, sign in with the email link above, then add one on your Account page (Passkeys › Add a passkey).', true); return; }
     var v = await post('/api/passkeys/login/verify', { challengeId: o.challengeId, response: resp });
     if (!v._ok) { say(msg, v.error || "That didn't work.", true); return; }
     location.href = next || '/playlists/';
@@ -62,6 +68,7 @@
       });
     });
     document.getElementById('passkey-signin').addEventListener('click', function () { passkeySignIn(msg, next); });
+    if (window.AvidPasskey) window.AvidPasskey.keepReady('login');
   }
 
   // ---------------------------------------------------------------- /link/
@@ -325,15 +332,23 @@
     post('/api/account/settings', { watchHistory: e.target.checked }).then(load);
   });
 
+  if (window.AvidPasskey) window.AvidPasskey.keepReady('register');
   document.getElementById('add-passkey').addEventListener('click', async function () {
     var m = document.getElementById('passkey-msg');
     if (!WA || !WA.browserSupportsWebAuthn()) { say(m, "This browser doesn't support passkeys.", true); return; }
     say(m, 'Follow your browser to create the passkey…');
-    var o = await post('/api/passkeys/register/options');
+    var P = window.AvidPasskey;
+    // Nov 22: options fetched before the tap, so the passkey starts straight from it (Safari on iPhone required it).
+    var o = P ? await P.options('register') : await post('/api/passkeys/register/options');
     if (!o._ok) { say(m, o.error || 'Something went wrong.', true); return; }
     var resp;
-    try { resp = await WA.startRegistration({ optionsJSON: o.options }); } catch (e) {
-      say(m, e && e.name === 'InvalidStateError' ? 'This device already has a passkey for your account.' : 'Adding the passkey was cancelled.', true); return;
+    try {
+      var start = function () { return WA.startRegistration({ optionsJSON: o.options }); };
+      resp = await (P ? P.fromTap('Create your passkey', 'Your browser asks you to save a passkey for avidviewer.app next (Face ID, fingerprint or your device code).', 'Create passkey', start) : start());
+    } catch (e) {
+      if (P) { P.report('account', e); say(m, P.explain(e), true); }
+      else say(m, e && e.name === 'InvalidStateError' ? 'This device already has a passkey for your account.' : 'Adding the passkey was cancelled.', true);
+      return;
     }
     var v = await post('/api/passkeys/register/verify', { challengeId: o.challengeId, response: resp });
     if (!v._ok) { say(m, v.error || "That didn't work.", true); return; }
