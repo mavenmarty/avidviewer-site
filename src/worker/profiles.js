@@ -198,9 +198,7 @@ export async function deviceProfiles(env, deviceId) {
     `SELECT p.id, p.name, p.kids, p.parent, p.color, p.pin FROM device_profiles dp JOIN profiles p ON p.id = dp.profile_id
       WHERE dp.device_id = ?1 ORDER BY p.sort, p.created_at`
   ).bind(deviceId).all()).results;
-  // A Kids profile isn't finished until every grown-up profile in the account has a PIN: until then devices don't get it.
-  const unfinished = await env.DB.prepare(`SELECT 1 FROM profiles WHERE user_id = (SELECT user_id FROM devices WHERE id = ?1) AND kids = 0 AND pin IS NULL`).bind(deviceId).first();
-  if (unfinished) ps = ps.filter((p) => !p.kids);
+  // Nov 22, 2026 (beta request): grown-up PINs are optional, so a Kids profile goes to devices straight away.
   const ids = ps.map((p) => p.id);
   const pls = ids.length ? (await env.DB.prepare(
     `SELECT pp.profile_id, pp.playlist_id FROM profile_playlists pp JOIN account_playlists a ON a.id = pp.playlist_id AND a.removing = 0
@@ -368,12 +366,8 @@ async function ownIds(env, table, userId, ids) {
   return ids.filter((i) => mine.has(i));
 }
 
-/** A Kids profile needs a PIN on every other profile: the ones still missing one, after [pins] are set. */
-async function missingPins(env, userId) {
-  const r = (await env.DB.prepare('SELECT id, name, kids, pin FROM profiles WHERE user_id = ?1').bind(userId).all()).results;
-  if (!r.some((p) => p.kids)) return [];
-  return r.filter((p) => !p.kids && !p.pin).map((p) => ({ id: p.id, name: p.name }));
-}
+/** Nov 22, 2026: grown-up PINs are optional, Kids profile or not; nothing is ever missing. (Kept for callers.) */
+async function missingPins() { return []; }
 
 export async function profileSave(request, env, user) {
   const b = await body(request);
@@ -388,13 +382,7 @@ export async function profileSave(request, env, user) {
   const others = (await env.DB.prepare('SELECT id, name, kids, pin FROM profiles WHERE user_id = ?1').bind(user.id).all()).results;
   if (others.some((p) => p.id !== id && p.name.toLowerCase() === name.toLowerCase())) return json({ error: `There's already a profile called ${name}.` }, 400);
   if (id && !others.some((p) => p.id === id)) return json({ error: 'That profile is no longer in your account.' }, 404);
-  // The Kids rule, checked before anything is saved: every grown-up profile needs a PIN while a Kids profile exists.
-  const after = others.filter((p) => p.id !== id).map((p) => ({ ...p, pin: pins[p.id] || p.pin }));
-  after.push({ id: id || 'new', name, kids, pin: kids ? null : (pin === undefined ? others.find((p) => p.id === id)?.pin : pin || null) });
-  if (after.some((p) => p.kids)) {
-    const missing = after.filter((p) => !p.kids && !p.pin);
-    if (missing.length) return json({ error: 'While a Kids profile exists, every other profile needs a PIN: ' + missing.map((p) => p.name).join(', ') + '.', needPins: missing.map((p) => p.id) }, 400);
-  }
+  // Nov 22, 2026: no PIN rule for Kids profiles any more (PINs are each profile's own choice).
   const playlists = await ownIds(env, 'account_playlists', user.id, strList(b?.playlists, 100, 40));
   const managedDevs = new Set((await env.DB.prepare('SELECT id FROM devices WHERE user_id = ?1 AND revoked_at IS NULL AND managed_at IS NOT NULL')
     .bind(user.id).all()).results.map((r) => r.id));
@@ -445,9 +433,6 @@ export async function profilePin(request, env, user) {
   const pin = typeof b?.pin === 'string' && PIN.test(b.pin) ? b.pin : null;
   const p = await env.DB.prepare('SELECT kids FROM profiles WHERE id = ?1 AND user_id = ?2').bind(id, user.id).first();
   if (!p || p.kids) return json({ error: 'A Kids profile has no PIN.' }, 400);
-  if (!pin && (await env.DB.prepare('SELECT 1 FROM profiles WHERE user_id = ?1 AND kids = 1').bind(user.id).first())) {
-    return json({ error: 'While a Kids profile exists, this profile needs a PIN. Change it instead of removing it.' }, 400);
-  }
   await env.DB.prepare('UPDATE profiles SET pin = ?1, updated_at = ?2 WHERE id = ?3').bind(pin, Date.now(), id).run();
   return json({ ok: true });
 }

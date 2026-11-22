@@ -132,7 +132,7 @@ export async function attention(env, user) {
   // A Kids profile isn't finished (or sent to devices) until every grown-up profile has a PIN.
   const kids = profs.results.filter((p) => p.kids);
   const missing = profs.results.filter((p) => !p.kids && !p.pin).map((p) => p.name);
-  if (kids.length && missing.length) {
+  if (false && kids.length && missing.length) { // Nov 22, 2026: grown-up PINs are optional now
     add(`kids:${kids.map((k) => k.id).join(',')}:${missing.join(',')}`, 'warn', 'profiles', `${list(kids.map((k) => k.name))} isn’t set up yet`,
       `A Kids profile goes to your devices once every grown-up profile has a PIN, so a child can’t switch out of it. Still needed: ${list(missing)}.`,
       [{ label: 'Finish setting up', href: `/profiles/#finish=${kids[0].id}` }]);

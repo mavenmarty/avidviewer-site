@@ -636,7 +636,7 @@
       var dl = el('dl', 'mg-dl');
       [['Playlists', pls.length ? names(pls) : 'None yet'], ['Devices', q.devices.length ? q.devices.length + (q.devices.length === 1 ? ' device' : ' devices') : 'None yet'],
         ['Hidden', hiddenText(q)]].forEach(function (x) { add(dl, el('dt', null, x[0]), el('dd', null, x[1])); });
-      var waitPins = q.kids ? S.profiles.filter(function (x) { return !x.kids && !x.hasPin; }) : [];
+      var waitPins = []; // Nov 22, 2026: grown-up PINs are optional; a Kids profile goes to devices straight away
       if (waitPins.length) add(c, el('p', 'mg-warn', 'Not on your devices yet: ' + names(waitPins.map(function (x) { return x.name; })) + (waitPins.length === 1 ? ' needs' : ' need') + ' a PIN first.'),
         btn('Finish setting up', 'btn btn-primary', function () { go('#finish=' + q.id); }));
       add(c, head, dl, btn('Manage', 'btn btn-ghost', function () { go('#manage=' + q.id); }));
@@ -663,7 +663,7 @@
     var f = el('form', 'mg-card'); f.noValidate = true;
     var color = S.profiles.length % COLORS.length;
     var name = field('Name', 'text', '', { maxlength: '40' });
-    var kids = check('Kids profile (only the categories you allow; adult categories never). Next, you\'ll set a PIN for each grown-up profile that doesn\'t have one.', false, function () { show(); });
+    var kids = check('Kids profile (only the categories you allow; adult categories never). Grown-up profiles can have a PIN so a child can\'t switch into them; that\'s up to you.', false, function () { show(); });
     var parent = check('Parent (its PIN unlocks any profile on the TV)', false);
     var pin = pinPair('PIN (4 digits)');
     var pinNote = el('p', 'fineprint', '');
@@ -672,8 +672,8 @@
       var k = kids.input.checked;
       parent.hidden = k; pin.hidden = k;
       var kidsExist = S.profiles.some(function (q) { return q.kids; });
-      pinNote.textContent = k ? '' : kidsExist ? 'A PIN is required: your account has a Kids profile.' : 'A PIN is optional. It\'s required for every grown-up profile while a Kids profile exists.';
-      sv.textContent = k ? 'Next: PINs for grown-ups' : 'Create, then choose playlists';
+      pinNote.textContent = k ? '' : kidsExist ? 'A PIN is optional. With a Kids profile in your account, a PIN keeps a child from switching into this profile.' : 'A PIN is optional.';
+      sv.textContent = 'Create, then choose playlists';
     }
     add(f, name, add(el('label', 'fld', 'Colour'), colorPicker(color, function (i) { color = i; })), kids, parent, pin, pinNote,
       add(el('div', 'row-btns'), sv, btn('Cancel', 'btn btn-ghost', function () { go('#'); })));
@@ -681,10 +681,8 @@
     f.addEventListener('submit', async function (e) {
       e.preventDefault();
       var n = name.input.value.trim(); if (!n) return say('Give the profile a name.', true);
-      if (kids.input.checked) return kidsPins({ name: n, color: color });
-      var data = { name: n, kids: false, parent: parent.input.checked, color: color, playlists: [], devices: [] };
-      var kidsExist = S.profiles.some(function (q) { return q.kids; });
-      if (!pin.empty() || kidsExist) { var pr = pin.problem(); if (pr) return say(pr, true); data.pin = await pinHash(pin.value()); }
+      var data = { name: n, kids: kids.input.checked, parent: !kids.input.checked && parent.input.checked, color: color, playlists: [], devices: [] };
+      if (!kids.input.checked && !pin.empty()) { var pr = pin.problem(); if (pr) return say(pr, true); data.pin = await pinHash(pin.value()); }
       var r = await post('/api/account/profiles/save', data);
       if (!r._ok) return say(r.error, true);
       say(''); await load(); go('#manage=' + r.id);
