@@ -295,6 +295,8 @@ export async function adminLinesFor(env, userId) {
       };
     }),
     renewals: renewals.map((r) => ({ id: r.id, lineId: r.line_id, status: r.status, months: r.months, createdAt: r.created_at, doneAt: r.done_at, message: r.message, by: r.requested_by, expiresBefore: r.expires_before, expiresAfter: r.expires_after })),
+    // For Add a line › Existing line › Link to: the account's playlists (Nov 22).
+    playlists: playlists.filter((p) => !p.removing).map((p) => ({ id: p.id, name: p.name })),
   };
 }
 
@@ -421,7 +423,10 @@ async function adminAddLine(request, env, admin, audit) {
   const u = await env.DB.prepare("SELECT id, email, status FROM users WHERE id = ?1").bind(String(b?.userId || '')).first();
   if (!u) return json({ error: 'Account not found.' }, 404);
   const name = clip(b?.name, 60) || 'TV';
-  if (await env.DB.prepare('SELECT 1 FROM account_playlists WHERE user_id = ?1 AND lower(name) = lower(?2) AND removing = 0').bind(u.id, name).first()) {
+  // Nov 22, 2026 (owner): an existing line can be linked to a playlist the account already has, instead of adding one.
+  const linkTo = b?.mode === 'existing' && b?.playlistId ? await env.DB.prepare('SELECT id, name FROM account_playlists WHERE id = ?1 AND user_id = ?2 AND removing = 0').bind(String(b.playlistId), u.id).first() : null;
+  if (b?.mode === 'existing' && b?.playlistId && !linkTo) return json({ error: 'That playlist is no longer in the account.' }, 400);
+  if (!linkTo && await env.DB.prepare('SELECT 1 FROM account_playlists WHERE user_id = ?1 AND lower(name) = lower(?2) AND removing = 0').bind(u.id, name).first()) {
     return json({ error: `That account already has a playlist called ${name}. Choose another name.` }, 400);
   }
   const hosts = await hostsFor(env);
@@ -451,6 +456,15 @@ async function adminAddLine(request, env, admin, audit) {
   if (!made && (info.error || !info.line)) return json({ error: info.error ? "Couldn't reach the panel to check the line." : "That login isn't one of your lines." }, 400);
   lineId = info.line?.lineId || newId;
   const now = Date.now();
+  if (linkTo) {
+    // Only the line is recorded, pointing at the account's own playlist; nothing is added or sent to devices.
+    await env.DB.prepare(
+      `INSERT INTO reseller_lines (user_id, line_id, name, expires_at, enabled, checked_at, created_at, playlist_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6, ?7)
+       ON CONFLICT(user_id, line_id) DO UPDATE SET name = ?3, expires_at = COALESCE(?4, expires_at), enabled = ?5, checked_at = ?6, playlist_id = ?7`
+    ).bind(u.id, lineId, linkTo.name, info.line?.expiresAt ?? null, info.line.enabled ? 1 : 0, now, linkTo.id).run();
+    await audit(env, admin, 'reseller_link_existing', { id: u.id, email: u.email }, `line ${lineId} linked to ${linkTo.name}`, reason);
+    return json({ ok: true, id: linkTo.id, linked: true, name: linkTo.name, expiresAt: info.line?.expiresAt ?? null });
+  }
   const playlist = { name, type: 'xtream', server: login.server, username: login.username, password: login.password, m3uUrl: '', epgUrl: '' };
   const id = randomToken(12);
   const akey = await env.DB.prepare('SELECT pubkey FROM account_keys WHERE user_id = ?1').bind(u.id).first();

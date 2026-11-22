@@ -128,10 +128,18 @@
     if (s8.hosts.length) server.value = 'http://' + s8.hosts[0];
     var user = el('input'); user.placeholder = 'Username'; user.setAttribute('aria-label', 'Username'); user.autocomplete = 'off';
     var pass = el('input'); pass.type = 'password'; pass.placeholder = 'Password'; pass.setAttribute('aria-label', 'Password'); pass.autocomplete = 'new-password';
+    // Nov 22 (owner): an existing line can go to a playlist the account already has, instead of a new one.
+    var target = el('select'); target.setAttribute('aria-label', 'Playlist');
+    var o0 = el('option', null, 'As a new playlist'); o0.value = ''; target.appendChild(o0);
+    (s8.playlists || []).forEach(function (p) { var o = el('option', null, 'Link to “' + p.name + '”'); o.value = p.id; target.appendChild(o); });
     var go = el('button', 'btn btn-primary', 'Add a line'); go.type = 'submit';
-    function show() { var n = mode.value === 'new'; pack.hidden = months.hidden = !n; server.hidden = user.hidden = pass.hidden = n; }
-    mode.addEventListener('change', show);
-    [mode, name, pack, months, server, user, pass, go].forEach(function (x) { f.appendChild(x); });
+    function show() {
+      var n = mode.value === 'new', link = !n && target.value;
+      pack.hidden = months.hidden = !n; server.hidden = user.hidden = pass.hidden = target.hidden = n; name.hidden = !!link;
+      go.textContent = link ? 'Link the line' : 'Add a line';
+    }
+    mode.addEventListener('change', show); target.addEventListener('change', show);
+    [mode, target, name, pack, months, server, user, pass, go].forEach(function (x) { f.appendChild(x); });
     show();
     (packages ? Promise.resolve(packages) : get('/api/admin/reseller/packages').then(function (r) { if (r._ok) packages = r.packages; return r._ok ? r.packages : r; })).then(function (list) {
       pack.innerHTML = '';
@@ -141,6 +149,14 @@
     f.addEventListener('submit', function (e) {
       e.preventDefault();
       var n = mode.value === 'new';
+      if (!n && target.value) {
+        var pn = target.options[target.selectedIndex].text.replace(/^Link to /, '');
+        ask('Link this line?', 'Checks the line ' + user.value + ' with the provider and links it to ' + pn + ' in ' + u.email + '’s account. No playlist is added and nothing is sent to their devices; the login is only used for the check.', false, false, function (reason) {
+          return post('/api/admin/reseller/add-line', { userId: u.id, reason: reason, mode: 'existing', playlistId: target.value, server: server.value, username: user.value, password: pass.value })
+            .then(function (r) { if (r._ok) pass.value = ''; return r; });
+        }, reloadId);
+        return;
+      }
       var text = (n ? 'Makes a new ' + months.options[months.selectedIndex].text + ' line (' + ((pack.options[pack.selectedIndex] || {}).text || '?') + ') from your credits' : 'Attaches the line ' + user.value + ' (checked with the provider first)') +
         ' and puts it in ' + u.email + '’s account as “' + (name.value || 'TV') + '”. ' +
         (s8.accountKey ? 'Its login is locked for their passkey; they choose the profiles.' : 'They have no passkey set up, so its login is locked for each of their linked devices and every profile gets it.');
