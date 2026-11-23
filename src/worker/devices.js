@@ -22,7 +22,7 @@ import { json, randomToken, sha256hex, ipOf, body } from './auth.js';
 import { betaFor } from './beta.js';
 import { checkEnding } from './licenses.js';
 import { tvMeExtras, handleResellerTvApi } from './reseller.js';
-import { tvReport, tvClaim as tvReportsClaim, wantsLog, tvReportForm } from './reports.js';
+import { tvReport, tvClaim as tvReportsClaim, wantsLog, tvReportForm, syncBugs } from './reports.js';
 
 const ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // same as setup codes: no 0/O, 1/I/L
 const TV_CODE_TTL = 10 * 60 * 1000;
@@ -165,6 +165,9 @@ async function tvMe(request, env) {
     .bind(Date.now(), version, d.id).run();
   // Licenses ending within 3 days: the owner is emailed (at most one check an hour; never fails the check-in).
   await checkEnding(env).catch(() => {});
+  // Nov 23, 2026: bug status and report links are read from GitHub here too (at most every 5 minutes, never longer
+  // than 8 s and never failing the check-in), since the site has no scheduled jobs and no webhook yet.
+  await Promise.race([syncBugs(env).catch(() => {}), new Promise((r) => setTimeout(r, 8000))]);
   // Nov 21: reseller addresses and renewals to carry out, and Reload channels / Check subscription from the website.
   const extras = await tvMeExtras(env, d).catch((e) => { console.error('tv me extras failed', e); return {}; });
   return json({ email: d.email, name: d.name, deviceId: d.id, beta: await betaFor(env, d.id), sendLog: await wantsLog(env, d.id), ...extras });
