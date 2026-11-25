@@ -1,0 +1,50 @@
+<!-- {"title": "Get a free TMDB key — Avid Viewer", "description": "How to get the free TMDB API key that Avid Viewer's Discover uses, with what to enter in each field of TMDB's form."} -->
+<div class="wrap">
+  <header class="page-head">
+    <h1>Get a free TMDB key</h1>
+    <p>Discover, genres and title details in Avid Viewer come from TMDB (The Movie Database). TMDB gives each person their own free key for personal use. It takes about five minutes.</p>
+  </header>
+  <div class="doc">
+    <article class="prose">
+      <h2>1. Sign in to TMDB</h2>
+      <p>Go to <a href="https://www.themoviedb.org/signup" rel="noopener">themoviedb.org</a> and join (or sign in). Confirm your email address first: TMDB won't give a key until you have.</p>
+
+      <h2>2. Ask for a key</h2>
+      <ol>
+        <li>Open <a href="https://www.themoviedb.org/settings/api" rel="noopener">Settings › API</a> on TMDB.</li>
+        <li>Under <strong>Request an API Key</strong>, choose the link, then pick <strong>Developer</strong>. It's free for personal use. Don't pick the commercial option.</li>
+        <li>Read and accept TMDB's terms of use.</li>
+      </ol>
+
+      <h2>3. Fill in the form</h2>
+      <p>TMDB asks about the "application" the key is for. Use these, with your own name and contact details where it asks for them:</p>
+      <table class="tmdb-form">
+        <thead><tr><th>TMDB asks for</th><th>Enter</th></tr></thead>
+        <tbody>
+          <tr><td>Type of Use</td><td><strong>Personal</strong> (or the closest choice, such as Other)</td></tr>
+          <tr><td>Application Name</td><td><code id="tmdb-name">Avid Viewer</code> <button class="btn btn-ghost btn-sm" type="button" data-copy="tmdb-name">Copy</button></td></tr>
+          <tr><td>Application URL</td><td><code id="tmdb-url">https://avidviewer.app</code> <button class="btn btn-ghost btn-sm" type="button" data-copy="tmdb-url">Copy</button></td></tr>
+          <tr><td>Application Summary</td><td><span id="tmdb-summary">Personal, non-commercial use. I use Avid Viewer, a TV app at home, to show movie and TV show details, posters, ratings and trending titles from TMDB on my own TVs. The key is only used on my own devices and isn't shared.</span><br><button class="btn btn-ghost btn-sm" type="button" data-copy="tmdb-summary">Copy</button></td></tr>
+          <tr><td>Name, email, phone, address</td><td>Your own details. TMDB uses them to contact you about your key; Avid Viewer never sees them.</td></tr>
+        </tbody>
+      </table>
+      <p>Submit the form. For personal use the key usually appears straight away.</p>
+
+      <h2>4. Copy the key</h2>
+      <p>TMDB shows two values. Use the <strong>API Key</strong>: 32 letters and numbers. (The much longer <strong>API Read Access Token</strong> works too, but it's hard to type on a TV.)</p>
+
+      <h2>5. Give it to Avid Viewer</h2>
+      <ul>
+        <li><strong>Easiest, once for every TV:</strong> on this website, open <a href="/profiles/">Profiles</a>, choose a profile, then <strong>Discover</strong>, and paste it under <strong>For the whole account: TMDB key</strong>. Your TVs get it within a minute while Avid Viewer is open. It's locked so the website and its admins can't read it.</li>
+        <li><strong>On one TV:</strong> in Avid Viewer, open <strong>Settings › Discover</strong>, enter it under <strong>TMDB API key</strong> and choose <strong>Save</strong>. The app checks it with TMDB and says <strong>Key saved. Discover is ready.</strong></li>
+      </ul>
+
+      <h2>If it doesn't work</h2>
+      <ul>
+        <li><strong>"That key didn't work"</strong>: check that you copied the whole API Key with no spaces, and that TMDB shows it under Settings › API.</li>
+        <li><strong>No "Request an API Key" link</strong>: confirm your email address with TMDB, then sign in again.</li>
+      </ul>
+      <p class="fineprint">This product uses the TMDB API but is not endorsed or certified by TMDB. TMDB's key is free for personal use under <a href="https://www.themoviedb.org/api-terms-of-use" rel="noopener">TMDB's terms</a>.</p>
+    </article>
+  </div>
+</div>

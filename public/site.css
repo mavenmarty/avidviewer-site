@@ -636,3 +636,21 @@ button.btn-ghost { background: transparent; color: var(--text); }
 /* Nov 21, 2026: where a reseller line stands (account playlist, profiles, devices) */
 .adm-line-where { flex-basis: 100%; display: flex; flex-direction: column; gap: 2px; margin: 6px 0; }
 .adm-line-where p { margin: 0; font-size: 13px; }
+
+/* TMDB key help: the Discover tab's "How to get a free key" and /tmdb/ (Nov 25, 2026). */
+.mg-how { margin: 12px 0 16px; padding: 12px 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--card-2); }
+.mg-how summary { cursor: pointer; color: var(--accent-hi); font-weight: 600; }
+.mg-how ol { margin: 12px 0 8px; padding-left: 20px; }
+.mg-how li { margin: 6px 0; line-height: 1.5; }
+.mg-how ul { margin: 6px 0; padding-left: 18px; }
+.mg-how code { background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 1px 6px; font-size: 0.92em; white-space: normal; }
+.mg-how .btn-sm, .tmdb-form .btn-sm { margin-left: 4px; padding: 2px 10px; }
+.tmdb-form td:first-child { white-space: nowrap; color: var(--soft); }
+.tmdb-form #tmdb-summary { display: inline-block; margin-bottom: 6px; }
+@media (max-width: 640px) {
+  .prose table.tmdb-form, .tmdb-form tbody, .tmdb-form tr, .tmdb-form td { display: block; width: 100%; }
+  .tmdb-form thead { display: none; }
+  .tmdb-form tr { border: 1px solid var(--line); border-radius: 10px; margin-bottom: 10px; padding: 10px 12px; background: var(--card-2); }
+  .tmdb-form td { border: 0; padding: 2px 0; }
+  .tmdb-form td:first-child { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; }
+}

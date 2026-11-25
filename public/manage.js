@@ -1154,6 +1154,24 @@
     add(tk, el('h2', null, 'For the whole account: TMDB key'),
       el('p', 'soft', 'Discover uses a free key from themoviedb.org (Settings › API). Enter it once here and every TV gets it, locked so the website and its admins can’t read it.'),
       el('p', has ? 'mg-ok' : 'soft', has ? '● Saved for your TVs' : 'Not saved in your account yet (a TV may still have its own).'));
+    // How to get one: TMDB's form asks about the "application"; these are the answers, ready to copy (full steps on /tmdb/).
+    var how = el('details', 'mg-how'); how.open = !has;
+    var sum = 'Personal, non-commercial use. I use Avid Viewer, a TV app at home, to show movie and TV show details, posters, ratings and trending titles from TMDB on my own TVs. The key is only used on my own devices and isn\u2019t shared.';
+    function copyRow(label, id, text) {
+      var v = el('code', null, text); v.id = id;
+      var c = el('button', 'btn btn-ghost btn-sm', 'Copy'); c.type = 'button'; c.setAttribute('data-copy', id);
+      return add(el('li'), el('strong', null, label + ': '), v, document.createTextNode(' '), c);
+    }
+    function lnk(t, href) { var x = el('a', null, t); x.href = href; if (/^http/.test(href)) x.rel = 'noopener'; return x; }
+    var steps = el('ol');
+    add(steps,
+      add(el('li'), document.createTextNode('Sign in at themoviedb.org (confirm your email first), open '), lnk('Settings › API', 'https://www.themoviedb.org/settings/api'), document.createTextNode(', choose Request an API Key, then Developer, and accept the terms.')),
+      add(el('li'), document.createTextNode('Fill in the form with these, and your own name and contact details:'),
+        add(el('ul'), add(el('li'), el('strong', null, 'Type of Use: '), document.createTextNode('Personal (or the closest choice)')),
+          copyRow('Application Name', 'tmdb-name', 'Avid Viewer'), copyRow('Application URL', 'tmdb-url', 'https://avidviewer.app'), copyRow('Application Summary', 'tmdb-summary', sum))),
+      add(el('li'), document.createTextNode('Copy the API Key (32 letters and numbers) and paste it below.')));
+    add(how, el('summary', null, 'How to get a free key'), steps, add(el('p', 'fineprint'), document.createTextNode('Step by step, with troubleshooting: '), lnk('avidviewer.app/tmdb', '/tmdb/'), document.createTextNode('.')));
+    tk.appendChild(how);
     var f = field(has ? 'Replace the key' : 'TMDB API key', 'password', '', { autocomplete: 'off', maxlength: '200' });
     add(tk, f, add(el('div', 'row'), btn('Save key', 'btn btn-primary', async function () {
       var k = f.input.value.trim(); if (!/^[A-Za-z0-9._-]{16,}$/.test(k)) return say('That doesn’t look like a TMDB key (Settings › API on themoviedb.org).', true);
