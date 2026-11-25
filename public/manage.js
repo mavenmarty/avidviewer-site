@@ -105,7 +105,7 @@
     nopasskey: 'Keeping logins in your account needs a passkey. Add one on your Account page (Passkeys), then try again.',
     cancelled: 'The passkey was cancelled, so the login wasn\'t unlocked. If your browser said there\'s no passkey on this device, use the device where you made it, or add one here: Account › Passkeys › Add a passkey.',
     noprf: 'This passkey can\'t keep logins locked (your browser or password manager doesn\'t support it yet). Try another browser, or type the login again when you add a device.',
-    other: 'Your logins are locked with a different passkey. Choose the passkey you used when you first saved a playlist.',
+    other: 'Your logins are locked with a different passkey, and it wasn\'t used. Try again and choose that passkey when your browser asks (for a passkey saved on an iPhone or Mac, choose “Use a phone or tablet” and scan the code with your iPhone).',
   };
   /** Makes the account's first passkey (Nov 17: an account without one only got the browser's "no passkey on this
    * device", since this page used to only ask for an existing passkey). */
@@ -156,9 +156,7 @@
     var res = cred && cred.getClientExtensionResults ? cred.getClientExtensionResults() : {};
     var out = res && res.prf && res.prf.results && res.prf.results.first;
     if (!out) throw VaultError('noprf');
-    var hk = await crypto.subtle.importKey('raw', out, 'HKDF', false, ['deriveKey']);
-    var kek = await crypto.subtle.deriveKey({ name: 'HKDF', hash: 'SHA-256', salt: new Uint8Array(0), info: new TextEncoder().encode('avidviewer-vault:v1') },
-      hk, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+    var kek = await kekFrom(out);
     var row = S.vault.find(function (k) { return k.credentialId === cred.id; });
     if (row) {
       V = await aesKey(await dec(kek, row.wrapped), ['encrypt', 'decrypt']);
@@ -169,9 +167,44 @@
       if (!r._ok) throw new Error(r.error || 'The key couldn\'t be saved.');
       S.vault.push({ credentialId: cred.id, wrapped: wrapped });
       V = await aesKey(raw, ['encrypt', 'decrypt']);
-    } else throw VaultError('other');
+    } else {
+      // Nov 25, 2026: this passkey isn't one the logins are locked with yet (a second passkey, e.g. Chrome on Windows
+      // next to an Apple one). Open the lock once with a passkey that has it, then lock a copy for this one, so either
+      // passkey opens the logins from now on. The site still never sees the vault key.
+      var names = S.vault.map(function (k) { return k.name; }).filter(Boolean);
+      var which = names.length ? '“' + names.join('” or “') + '”' : 'the passkey you used when you first saved a playlist';
+      var ask2 = function () {
+        return navigator.credentials.get({ publicKey: {
+          challenge: crypto.getRandomValues(new Uint8Array(32)), rpId: location.hostname, userVerification: 'required', timeout: 120000,
+          allowCredentials: S.vault.map(function (k) { return { type: 'public-key', id: unb64url(k.credentialId) }; }),
+          extensions: { prf: { eval: { first: salt } } },
+        } });
+      };
+      var cred2;
+      try {
+        cred2 = await (P ? P.fromTap('Add this passkey to your locked logins', 'Your logins are locked with your passkey ' + which + '. Use it once now and this passkey opens them too from now on. If it\'s saved on your iPhone or Mac and you\'re on another computer, choose “Use a phone or tablet” and scan the code with your iPhone.', 'Use my other passkey', ask2, true) : ask2());
+      } catch (e) { throw VaultError('other'); }
+      var res2 = cred2 && cred2.getClientExtensionResults ? cred2.getClientExtensionResults() : {};
+      var out2 = res2 && res2.prf && res2.prf.results && res2.prf.results.first;
+      var row2 = cred2 && S.vault.find(function (k) { return k.credentialId === cred2.id; });
+      if (!out2 || !row2) throw VaultError(out2 ? 'other' : 'noprf');
+      var raw2 = await dec(await kekFrom(out2), row2.wrapped);
+      var wrapped2 = await enc(kek, raw2);
+      var r2 = await post('/api/account/vault/key', { credentialId: cred.id, wrapped: wrapped2 });
+      if (!r2._ok) throw new Error(r2.error || 'The key couldn\'t be saved.');
+      S.vault.push({ credentialId: cred.id, wrapped: wrapped2, name: '' });
+      V = await aesKey(raw2, ['encrypt', 'decrypt']);
+      say('Done: this passkey opens your logins too now, as well as ' + which + '.');
+    }
     return V;
   }
+  /** The key a passkey's PRF output gives (wraps the vault key). */
+  async function kekFrom(prfOut) {
+    var hk = await crypto.subtle.importKey('raw', prfOut, 'HKDF', false, ['deriveKey']);
+    return crypto.subtle.deriveKey({ name: 'HKDF', hash: 'SHA-256', salt: new Uint8Array(0), info: new TextEncoder().encode('avidviewer-vault:v1') },
+      hk, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+  }
+  function unb64url(s) { s = s.replace(/-/g, '+').replace(/_/g, '/'); while (s.length % 4) s += '='; return unb64(s); }
   async function lockLogin(login) { return enc(await unlock(), new TextEncoder().encode(JSON.stringify(login))); }
   async function openLogin(text) { return JSON.parse(new TextDecoder().decode(await dec(await unlock(), text))); }
   var seal = function (pub, obj) { return window.AvidPlaylists.seal(pub, obj); };

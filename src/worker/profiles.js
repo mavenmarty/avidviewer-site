@@ -305,7 +305,7 @@ export async function manage(env, user) {
     env.DB.prepare('SELECT device_id, profile_id FROM device_profiles WHERE user_id = ?1').bind(uid).all(),
     env.DB.prepare('SELECT profile_id, playlist_id, data FROM profile_visibility WHERE user_id = ?1').bind(uid).all(),
     env.DB.prepare('SELECT playlist_id, updated_at FROM playlist_catalogs WHERE user_id = ?1').bind(uid).all(),
-    env.DB.prepare('SELECT credential_id, wrapped FROM vault_keys WHERE user_id = ?1').bind(uid).all(),
+    env.DB.prepare('SELECT v.credential_id, v.wrapped, p.name FROM vault_keys v LEFT JOIN passkeys p ON p.id = v.credential_id WHERE v.user_id = ?1').bind(uid).all(),
   ]);
   const [dpl, akey, csum] = await Promise.all([
     env.DB.prepare(`SELECT device_id, local_id, name, type, enabled, live, vod, remote_id, sealed IS NOT NULL AS has_login, updated_at
@@ -339,7 +339,7 @@ export async function manage(env, user) {
       devices: dp.results.filter((x) => x.profile_id === p.id).map((x) => x.device_id),
       visibility: Object.fromEntries(vis.results.filter((v) => v.profile_id === p.id).map((v) => [v.playlist_id, JSON.parse(v.data)])),
     })),
-    vault: keys.results.map((k) => ({ credentialId: k.credential_id, wrapped: k.wrapped })),
+    vault: keys.results.map((k) => ({ credentialId: k.credential_id, wrapped: k.wrapped, name: k.name || '' })),
     passkeys: (await env.DB.prepare('SELECT COUNT(*) AS n FROM passkeys WHERE user_id = ?1').bind(uid).first())?.n || 0,
     accountKey: akey ? { pubkey: akey.pubkey, wrapped: akey.wrapped } : null,
     devicePlaylists: dpl.results.map((x) => ({
