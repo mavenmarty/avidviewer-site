@@ -11,6 +11,28 @@
   // An app's own built-in browser (no "Safari/" in its name on iOS) usually can't make passkeys for other sites.
   var inApp = iOS && !/Safari\//.test(ua);
 
+  // Nov 26, 2026: what this browser says it can do with passkeys, noted with a failure (and used to explain it).
+  var caps = { uvpa: null, list: '' };
+  try {
+    if (window.PublicKeyCredential && PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable)
+      PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable().then(function (v) { caps.uvpa = v; }).catch(function () {});
+    if (window.PublicKeyCredential && PublicKeyCredential.getClientCapabilities)
+      PublicKeyCredential.getClientCapabilities().then(function (c) {
+        caps.list = Object.keys(c || {}).filter(function (k) { return /passkey|platform|hybrid|conditional|prf/i.test(k); })
+          .map(function (k) { return k + '=' + (c[k] ? 1 : 0); }).join(',');
+      }).catch(function () {});
+  } catch (e) {}
+  function capsText() {
+    return 'face/touch/passcode ' + (caps.uvpa === null ? '?' : caps.uvpa ? 'yes' : 'no') + (caps.list ? ' · ' + caps.list : '');
+  }
+
+  /** Runs the passkey call [fn] and, if it fails, notes on the error how long the browser took to refuse (e.ms). */
+  function timed(fn) {
+    var t = Date.now(), r;
+    try { r = fn(); } catch (e) { try { e.ms = 0; } catch (x) {} throw e; }
+    return Promise.resolve(r).catch(function (e) { try { e.ms = Date.now() - t; } catch (x) {} throw e; });
+  }
+
   function post(path, data) {
     return fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin', body: JSON.stringify(data || {}) })
       .then(function (r) { return r.json().catch(function () { return {}; }).then(function (d) { d._ok = r.ok; d._status = r.status; return d; }); });
@@ -43,7 +65,7 @@
    * tap, otherwise after a button of its own. [force] always asks (a second passkey prompt right after a first).
    */
   function fromTap(title, text, label, fn, force) {
-    if (!force && !needsTap()) return fn();
+    if (!force && !needsTap()) return timed(fn);
     return new Promise(function (resolve, reject) {
       var back = document.createElement('div');
       back.setAttribute('role', 'dialog'); back.setAttribute('aria-modal', 'true');
@@ -58,7 +80,7 @@
       function close() { back.remove(); }
       no.addEventListener('click', function () { close(); var e = new Error('Not now'); e.name = 'NotAllowedError'; e.byPage = true; reject(e); });
       // The passkey starts inside this tap (synchronously), as Safari requires.
-      go.addEventListener('click', function () { close(); var r; try { r = fn(); } catch (e) { reject(e); return; } Promise.resolve(r).then(resolve, reject); });
+      go.addEventListener('click', function () { close(); var r; try { r = timed(fn); } catch (e) { reject(e); return; } Promise.resolve(r).then(resolve, reject); });
       row.appendChild(no); row.appendChild(go);
       box.appendChild(h); box.appendChild(p); box.appendChild(row); back.appendChild(box);
       document.body.appendChild(back);
@@ -77,6 +99,20 @@
     if (n === 'SecurityError') return 'This browser refused passkeys for this page. Open avidviewer.app directly in Safari or Chrome and try again.';
     if (n === 'NotSupportedError') return 'This browser can\'t make passkeys. Update it, or use Safari or Chrome.';
     if (n === 'AbortError') return 'The passkey was interrupted. Please try again.';
+    // Refused within a moment: no Face ID or passcode sheet can have been shown, so it's a setting, not a cancel.
+    var quick = e && typeof e.ms === 'number' && e.ms < 1500;
+    if (n === 'NotAllowedError' && quick && caps.uvpa === false) {
+      return 'This device has no Face ID, Touch ID or passcode set up, and passkeys need one. Set a passcode (on an iPhone: Settings › Face ID & Passcode), then try again.';
+    }
+    if (n === 'NotAllowedError' && quick) {
+      return (iOS ? 'Your iPhone or iPad refused straight away, without showing Face ID, so a setting on it is stopping passkeys. Check, then try again:'
+          + ' (1) Settings › your name › iCloud › Passwords: turn on syncing for this device (or turn on your password manager in Settings › General › AutoFill & Passwords);'
+          + ' (2) Settings › Face ID & Passcode: a passcode must be set;'
+          + ' (3) if Screen Time is on, Content & Privacy Restrictions must allow passcode and account changes;'
+          + ' (4) tap the button on the device itself (not while it\'s being controlled from another screen).'
+        : 'Your browser refused straight away, without asking, so a setting is stopping passkeys. Make sure your browser or password manager can save passkeys and that this computer has a PIN, fingerprint or face sign-in set up, then try again.')
+        + ' You can also make your passkey on another device (a computer with Chrome works) and use this one later.';
+    }
     if (n === 'NotAllowedError') {
       return 'No passkey was made: it was cancelled, or the device didn\'t allow it.' + (iOS
         ? ' On an iPhone or iPad, passkeys are kept in iCloud Keychain: open Settings › your name › iCloud › Passwords and turn on syncing for this device (or, if you use another password manager, turn it on in Settings › General › AutoFill & Passwords), then try again.'
@@ -88,7 +124,8 @@
   /** Notes a failed set-up for the admin view: the step, the error's name and message, nothing else. */
   function report(step, e) {
     if (e && e.byPage) return;
-    post('/api/passkeys/register/failed', { step: step, error: errName(e), message: String((e && (e.cause && e.cause.message || e.message)) || '').slice(0, 300) }).catch(function () {});
+    var how = '[' + (e && typeof e.ms === 'number' ? 'refused after ' + e.ms + ' ms' : 'time unknown') + ' · ' + capsText() + '] ';
+    post('/api/passkeys/register/failed', { step: step, error: errName(e), message: (how + String((e && (e.cause && e.cause.message || e.message)) || '')).slice(0, 300) }).catch(function () {});
   }
 
   window.AvidPasskey = { keepReady: keepReady, options: options, fromTap: fromTap, explain: explain, report: report, iOS: iOS, inApp: inApp };
