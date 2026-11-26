@@ -101,15 +101,21 @@
     if (n === 'AbortError') return 'The passkey was interrupted. Please try again.';
     // Refused within a moment: no Face ID or passcode sheet can have been shown, so it's a setting, not a cancel.
     var quick = e && typeof e.ms === 'number' && e.ms < 1500;
+    // Nov 26: an iPhone being controlled from another screen (FaceTime screen sharing / remote control) also reports
+    // no Face ID or passcode, so don't claim they aren't set up.
     if (n === 'NotAllowedError' && quick && caps.uvpa === false) {
-      return 'This device has no Face ID, Touch ID or passcode set up, and passkeys need one. Set a passcode (on an iPhone: Settings › Face ID & Passcode), then try again.';
+      return 'This device says Face ID, Touch ID and its passcode can\'t be used right now, so it refused without asking.'
+        + (iOS ? ' This happens when the iPhone or iPad is being controlled or shared from another screen (FaceTime screen sharing, remote control or mirroring): end that and tap the button on the device itself.'
+          + ' Otherwise, check Settings › Face ID & Passcode (a passcode must be set) and, if Screen Time is on, that Content & Privacy Restrictions allow passcode changes.'
+          : ' Make sure this computer has a PIN, fingerprint or face sign-in set up, and that it isn\'t being used through remote desktop.')
+        + ' You can also make your passkey on another device (a computer with Chrome works).';
     }
     if (n === 'NotAllowedError' && quick) {
       return (iOS ? 'Your iPhone or iPad refused straight away, without showing Face ID, so a setting on it is stopping passkeys. Check, then try again:'
           + ' (1) Settings › your name › iCloud › Passwords: turn on syncing for this device (or turn on your password manager in Settings › General › AutoFill & Passwords);'
           + ' (2) Settings › Face ID & Passcode: a passcode must be set;'
           + ' (3) if Screen Time is on, Content & Privacy Restrictions must allow passcode and account changes;'
-          + ' (4) tap the button on the device itself (not while it\'s being controlled from another screen).'
+          + ' (4) tap the button on the device itself, not while it\'s being controlled or shared from another screen.'
         : 'Your browser refused straight away, without asking, so a setting is stopping passkeys. Make sure your browser or password manager can save passkeys and that this computer has a PIN, fingerprint or face sign-in set up, then try again.')
         + ' You can also make your passkey on another device (a computer with Chrome works) and use this one later.';
     }

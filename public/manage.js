@@ -151,6 +151,8 @@
       cred = await (P ? P.fromTap(made ? 'Passkey created' : 'Unlock your logins', made ? 'One more step: confirm the passkey you just made, to lock your logins with it.' : 'Your browser asks for your passkey next.', made ? 'Confirm passkey' : 'Use my passkey', ask, made) : ask());
     } catch (e) {
       if (P && made) P.report('confirm', e);
+      // Refused before anything could be shown: say why, not "cancelled".
+      if (P && e && e.name === 'NotAllowedError' && typeof e.ms === 'number' && e.ms < 1500) { var q = VaultError('explained'); q.message = P.explain(e); throw q; }
       throw VaultError(e && e.name === 'NotAllowedError' ? 'cancelled' : 'nopasskey');
     }
     var res = cred && cred.getClientExtensionResults ? cred.getClientExtensionResults() : {};
@@ -317,9 +319,17 @@
           say(r.kept ? 'Kept ' + r.kept + (r.kept === 1 ? ' login' : ' logins') + ' in your account' + (S.pending.length ? ' and sent the logins devices were waiting for.' : '.')
             : 'Done. Devices pick up changes within a minute while Avid Viewer is open.');
           await load();
-        } catch (e) { say(VAULT_TEXT[e.code] || e.message, true); go.disabled = false; }
+        } catch (e) {
+          // Nov 26: shown right under the button too (the page's message line is far below it on a phone).
+          var t = VAULT_TEXT[e.code] || e.message;
+          say(t, true); go.disabled = false;
+          note.textContent = t; note.hidden = false;
+          try { note.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (x) {}
+        }
       });
-      return go;
+      var note = el('p', 'form-msg err'); note.hidden = true; note.setAttribute('role', 'alert');
+      var wrap = el('div'); add(wrap, go, note);
+      return wrap;
     }
     if (!S.vault.length || !S.accountKey) {
       add(b, el('h3', null, 'Keep your logins in your account'),
