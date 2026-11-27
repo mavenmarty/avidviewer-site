@@ -1565,9 +1565,13 @@
     }
     var D = { myList: [], services: [], start: 'all', grownUps: true };
     if (d.discover) try { D = Object.assign(D, await hOpen(d.discover.blob)); } catch (e) { if (e.code) throw e; }
+    var base = d.discover ? d.discover.at : null;
     async function save(msg) {
-      var x = await post('/api/account/discover', { profileId: q.id, blob: await hLock(D) });
+      var x = await post('/api/account/discover', { profileId: q.id, blob: await hLock(D), base: base });
+      if (x._ok) base = x.at;
       say(x._ok ? (msg || 'Saved · TVs pick it up within a minute while Avid Viewer is open') : (x.error || 'Couldn’t save.'), !x._ok);
+      // A TV changed it since this page read it: show the latest (the message stays) so nothing a TV added is lost.
+      if (x.changed) { var m = x.error; await route(); say(m, true); }
     }
     var sv = el('section', 'mg-card'); b.appendChild(sv);
     add(sv, el('h2', null, 'My streaming services'), el('p', 'soft', 'The services ' + q.name + ' subscribes to. Discover can then show only what ' + q.name + ' can watch now.'));

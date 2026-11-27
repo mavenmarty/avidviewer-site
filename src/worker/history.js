@@ -6,9 +6,9 @@
 // On when the account's "Keep my watch history" is on (the default) and the profile isn't switched off.
 //
 // Device (Bearer token):
-//   POST /api/tv/history {profiles:[{id, since, put:[{item, blob|null, at}], discover:{blob, at}?}]}
+//   POST /api/tv/history {profiles:[{id, since, put:[{item, blob|null, at}], discover:{blob, at, base?}?}]}
 //     → {enabled, key (the history key sealed for this device, or null), tmdb:{blob, at}|null,
-//        profiles:[{id, enabled, seq, items:[{item, blob|null, at}], discover:{blob, at}|null}]}
+//        profiles:[{id, enabled, seq, items:[{item, blob|null, at}], discover:{blob, at}|null, discoverOk?}]}
 // Account (signed in): history (GET), history/put, history/key, history/devices, history/seal, profiles/history,
 //   discover, tmdb.
 
@@ -16,6 +16,9 @@ import { json, body } from './auth.js';
 import { deviceFor } from './devices.js';
 
 const BLOB = /^[A-Za-z0-9+/=]{16,40000}$/;
+// Nov 27, 2026: Discover settings and My List are one locked document; 40,000 characters held about 140 titles and a
+// longer list was dropped without a word. A long My List fits now, and one too long is answered with an error.
+const DOC = /^[A-Za-z0-9+/=]{16,600000}$/;
 const ITEM = /^[A-Za-z0-9_-]{8,64}$/;
 const clip = (v, n) => (typeof v === 'string' ? v.slice(0, n) : '');
 const parse = (s) => { try { return JSON.parse(s); } catch { return null; } };
@@ -44,7 +47,17 @@ async function tvHistory(request, env) {
     const pOn = enabled && mine.get(id);
     // Discover settings sync even when history is off (they're settings, not history).
     const dsc = p.discover;
-    if (dsc && BLOB.test(dsc.blob || '')) {
+    let discoverOk;
+    if (dsc && !DOC.test(dsc.blob || '')) discoverOk = false;
+    else if (dsc && dsc.base !== undefined) {
+      // Nov 27, 2026 (app 1.31.1): saved only if nobody changed it since this TV last had it (base = the time the
+      // account gave it then). Otherwise the TV gets the newer one back, joins its own changes in and sends again,
+      // so a title added on one TV is no longer lost when another TV saves its older list. Times are the site's clock.
+      const base = Number(dsc.base) || 0;
+      const r = await env.DB.prepare(`INSERT INTO profile_discover (profile_id, user_id, blob, updated_at) VALUES (?1, ?2, ?3, ?4)
+        ON CONFLICT(profile_id) DO UPDATE SET blob = ?3, updated_at = ?4 WHERE profile_discover.updated_at <= ?5`).bind(id, d.user_id, dsc.blob, Math.max(now, base + 1), base).run();
+      discoverOk = (r.meta?.changes || 0) > 0;
+    } else if (dsc) {
       const at = Math.min(now, Number(dsc.at) || now);
       await env.DB.prepare(`INSERT INTO profile_discover (profile_id, user_id, blob, updated_at) VALUES (?1, ?2, ?3, ?4)
         ON CONFLICT(profile_id) DO UPDATE SET blob = ?3, updated_at = ?4 WHERE ?4 >= profile_discover.updated_at`).bind(id, d.user_id, dsc.blob, at).run();
@@ -71,6 +84,8 @@ async function tvHistory(request, env) {
       id, enabled: pOn, seq: now,
       items: rows.map((r) => ({ item: r.item, blob: r.deleted ? null : r.blob, at: r.updated_at })),
       discover: disc ? { blob: disc.blob, at: disc.updated_at } : null,
+      ...(discoverOk === undefined ? {} : { discoverOk }),
+      ...(dsc && !DOC.test(dsc.blob || '') ? { discoverError: 'My List is too long to save in your account.' } : {}),
     });
   }
   const key = await env.DB.prepare('SELECT sealed FROM device_history_keys WHERE device_id = ?1 AND user_id = ?2').bind(d.id, d.user_id).first();
@@ -175,11 +190,14 @@ export async function discoverSave(request, env, user) {
   const b = await body(request);
   const p = await ownProfile(env, user, b?.profileId);
   if (!p) return json({ error: 'That profile is no longer in your account.' }, 404);
-  if (!BLOB.test(b?.blob || '')) return json({ error: 'Not locked correctly.' }, 400);
+  if (!DOC.test(b?.blob || '')) return json({ error: b?.blob && b.blob.length > 600000 ? 'My List is too long to save.' : 'Not locked correctly.' }, 400);
   const now = Date.now();
-  await env.DB.prepare(`INSERT INTO profile_discover (profile_id, user_id, blob, updated_at) VALUES (?1, ?2, ?3, ?4)
-    ON CONFLICT(profile_id) DO UPDATE SET blob = ?3, updated_at = ?4`).bind(p.id, user.id, b.blob, now).run();
-  return json({ ok: true, at: now });
+  // Nov 27, 2026: with base (the time this page read it), not over a change a TV made since.
+  const base = b.base == null ? null : Number(b.base) || 0;
+  const r = await env.DB.prepare(`INSERT INTO profile_discover (profile_id, user_id, blob, updated_at) VALUES (?1, ?2, ?3, ?4)
+    ON CONFLICT(profile_id) DO UPDATE SET blob = ?3, updated_at = ?4 WHERE ?5 IS NULL OR profile_discover.updated_at <= ?5`).bind(p.id, user.id, b.blob, Math.max(now, (base || 0) + 1), base).run();
+  if (!(r.meta?.changes > 0)) return json({ error: 'A TV changed this a moment ago. Showing the latest now: make your change again.', changed: true }, 409);
+  return json({ ok: true, at: Math.max(now, (base || 0) + 1) });
 }
 
 export async function tmdbSave(request, env, user) {
