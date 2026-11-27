@@ -17,6 +17,7 @@
 // the database can't be used to sign in. Sign-in links go in the URL's #fragment, which mail scanners don't
 // send to the server and don't "click", so a scanner can't use up someone's link.
 
+import { setupSave } from './setup.js';
 import { playlistsSave, playlistsSeal, playlistsRemove, playlistVault } from './playlists.js';
 import { attention, attentionDismiss, playlistsRetry } from './attention.js';
 import { listsGet, listsSave, orderGet, orderSave } from './lists.js';
@@ -462,6 +463,7 @@ export async function handleAccountApi(request, env, realUrl) {
     case '/api/account/discover': return discoverSave(request, env, user);
     case '/api/account/tmdb': return tmdbSave(request, env, user);
     case '/api/account/attention/dismiss': return attentionDismiss(request, env, user);
+    case '/api/account/setup': return request.method === 'POST' ? setupSave(request, env, user) : json({ error: 'Use POST.' }, 405);
     case '/api/account/playlists/retry': return playlistsRetry(request, env, user);
     case '/api/account/playlists/import': return playlistsImport(request, env, user);
     case '/api/account/playlists/adopt': return playlistsAdopt(request, env, user);

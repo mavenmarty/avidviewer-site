@@ -305,7 +305,7 @@
   }
 
   function renderPending() {
-    var box = $('mg-pending'); box.innerHTML = '';
+    var box = $('mg-pending'); if (!box) return; box.innerHTML = '';
     if (PAGE !== 'playlists') return; // elsewhere, Needs your attention points here
     var b = el('section', 'mg-banner');
     var importable = S.playlists.filter(function (p) { return !p.kept && !p.removing && deviceHas(p).length; });
@@ -356,10 +356,423 @@
     if (b.childNodes.length) box.appendChild(b);
   }
 
+
+  // ------------------------------------------------------------ First-time setup: /start/ (Nov 26, 2026)
+  // Four steps to a playing TV (account, TV, playlist, passkey), then four optional "Make it yours" steps. The TV that
+  // sent you here (its QR code carries ?c=CODE) is linked as soon as you're signed in; the login is sealed straight to
+  // it, so the first TV needs no passkey; the passkey comes last and keeps the login for the next TV (one prompt when
+  // the browser supports it). The website never sees a login.
+  var ST = { code: '', fn: '', tried: false, linking: null, linkErr: '', login: null, playlistId: null, sentAt: 0, tvSkipped: false, timer: null, waitedFor: 0 };
+  (function () {
+    var q = new URLSearchParams(location.search);
+    ST.code = (q.get('c') || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8);
+    ST.fn = (q.get('fn') || '').trim().slice(0, 40);
+    try { ST.tvSkipped = sessionStorage.getItem('avid-start-tv-skip') === '1'; } catch (e) {}
+  })();
+  var STEPS = [['account', 'Account'], ['tv', 'Your TV'], ['playlist', 'Playlist'], ['passkey', 'Passkey']];
+  function prettyCode(v) { var c = String(v || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8); return c.length > 4 ? c.slice(0, 4) + '-' + c.slice(4) : c; }
+  function rail(active) {
+    var nav = el('nav', 'st-rail'); nav.setAttribute('aria-label', 'Setup steps');
+    STEPS.forEach(function (s, i) {
+      var li = el('span', 'st-step' + (i < active ? ' done' : i === active ? ' now' : ''));
+      if (i === active) li.setAttribute('aria-current', 'step');
+      add(li, el('span', 'st-dot', i < active ? '✓' : String(i + 1)), el('span', null, s[1]));
+      nav.appendChild(li);
+    });
+    var mi = el('span', 'st-step' + (active === 4 ? ' now' : ''));
+    add(mi, el('span', 'st-opt', 'Optional'), el('span', null, 'Make it yours'));
+    nav.appendChild(mi);
+    return nav;
+  }
+  function stPage(active, title, intro) {
+    var host = $('mg-body'); host.innerHTML = ''; host.hidden = false; $('mg-loading').hidden = true;
+    var b = el('div', 'mg-page st-page'); host.appendChild(b);
+    b.appendChild(rail(active));
+    var head = el('header', 'page-head'); add(head, el('h1', null, title)); if (intro) add(head, el('p', null, intro));
+    b.appendChild(head); return b;
+  }
+  function note(text, kind) { var p = el('p', 'st-note' + (kind ? ' ' + kind : ''), text); if (kind === 'err') p.setAttribute('role', 'alert'); return p; }
+  function stLink(text, fn) { var a = btn(text, 'linkish', fn); return a; }
+
+  // ---- dialogs: installing on a TV, and getting a TMDB key
+  function dialog(title, build) {
+    var d = el('dialog', 'st-dialog'); d.setAttribute('aria-label', title);
+    var top = el('div', 'st-dialog-top'); add(top, el('h2', null, title));
+    var x = btn('×', 'btn btn-ghost st-x', function () { d.close(); }); x.setAttribute('aria-label', 'Close');
+    add(top, x); d.appendChild(top); build(d);
+    d.appendChild(add(el('div', 'row-btns'), btn('Got it', 'btn btn-primary', function () { d.close(); })));
+    d.addEventListener('close', function () { d.remove(); });
+    document.body.appendChild(d); d.showModal();
+  }
+  function ol(items) { var o = el('ol', 'st-ol'); items.forEach(function (t) { var li = el('li'); li.innerHTML = t; o.appendChild(li); }); return o; }
+  function installHelp() {
+    dialog('Install Avid Viewer on your TV', function (d) {
+      add(d, el('p', null, 'Avid Viewer isn’t in the Amazon Appstore or Google Play, so the TV needs to allow one app, Downloader, to install it. You do this once; about 5 minutes with the remote.'));
+      var code = el('div', 'st-code'); add(code, el('span', 'soft', 'Downloader code'), el('strong', null, '2895338'), el('span', 'fineprint', 'On a computer, the same file is at github.com/mavenmarty/avid-viewer/releases/latest'));
+      add(d, code, el('h3', null, '1 · Get the TV ready'));
+      var tabs = el('div', 'seg small'); tabs.setAttribute('role', 'tablist');
+      var fire = ol(['Install <strong>Downloader</strong> from the Amazon Appstore: search “Downloader” on the home screen and choose the orange app by AFTVnews.',
+        'Turn on Developer Options: <strong>Settings › My Fire TV › About</strong>, highlight your device’s name (the first line) and press <strong>OK</strong> 7 times, until it says you’re a developer.',
+        'Press <strong>Back</strong> once and open <strong>Developer Options</strong> (now in My Fire TV).',
+        'Choose <strong>Install unknown apps</strong> and turn on <strong>Downloader</strong>. (Older Fire TVs: turn on <strong>Apps from Unknown Sources</strong>.) The newest Fire TV Stick HD runs Vega OS and can’t install Avid Viewer.']);
+      var gtv = ol(['Install <strong>Downloader</strong> from Google Play: search “Downloader” and choose the app by AFTVnews.',
+        'Turn on Developer options: <strong>Settings › System › About</strong>, highlight <strong>Android TV OS build</strong> (or Build) and press <strong>OK</strong> 7 times.',
+        'Allow Downloader to install apps: <strong>Settings › Apps › Security &amp; restrictions › Unknown sources</strong>, then turn on <strong>Downloader</strong> (older TVs: under Device Preferences).',
+        'Can’t find it? Skip it: Downloader shows a <strong>Settings</strong> button the first time it installs, which goes straight to the switch.']);
+      gtv.hidden = true;
+      [['Fire TV', fire], ['Android TV / Google TV', gtv]].forEach(function (t, i) {
+        var b = btn(t[0], 'st-tab' + (i ? '' : ' on'), function () { tabs.querySelectorAll('.st-tab').forEach(function (x) { x.classList.remove('on'); x.setAttribute('aria-selected', 'false'); }); b.classList.add('on'); b.setAttribute('aria-selected', 'true'); fire.hidden = i !== 0; gtv.hidden = i !== 1; });
+        b.setAttribute('role', 'tab'); b.setAttribute('aria-selected', i ? 'false' : 'true'); tabs.appendChild(b);
+      });
+      add(d, tabs, fire, gtv, el('h3', null, '2 · Install Avid Viewer'),
+        ol(['Open <strong>Downloader</strong>, select the URL box, enter <strong>2895338</strong> and choose <strong>Go</strong>.',
+          'When the download finishes, choose <strong>Install</strong>, then <strong>Open</strong>.',
+          'Choose <strong>Delete</strong> when Downloader offers to remove the installation file. Avid Viewer updates itself from now on.',
+          'Avid Viewer opens with a code and a QR code: scan it with your phone to link the TV.']));
+    });
+  }
+  function tmdbHelp() {
+    dialog('Get a free TMDB key', function (d) {
+      add(d, el('p', null, 'Discover, genres, posters and ratings come from TMDB (The Movie Database). TMDB gives each person their own free key for personal use. About 5 minutes.'));
+      var need = el('div', 'st-need'); add(need, el('strong', null, 'You’ll need'), el('p', 'soft', 'An email address you can open now (TMDB confirms it first), your own name, phone and address for TMDB’s form (TMDB keeps them; Avid Viewer never sees them), and this page, to copy the answers below.'));
+      add(d, need);
+      function row(k, v, id) { var r = el('div', 'st-ans'); add(r, el('span', 'soft', k)); var s = el('span', null, v); if (id) s.id = id; r.appendChild(s); if (id) { var c = btn('Copy', 'btn btn-ghost btn-sm'); c.setAttribute('data-copy', id); r.appendChild(c); } return r; }
+      var form = el('div', 'st-answers');
+      add(form, row('Type of Use', 'Personal (or the closest choice, such as Other)'), row('Application Name', 'Avid Viewer', 'st-tm-name'), row('Application URL', 'https://avidviewer.app', 'st-tm-url'),
+        row('Application Summary', 'Personal, non-commercial use. I use Avid Viewer, a TV app at home, to show movie and TV show details, posters, ratings and trending titles from TMDB on my own TVs. The key is only used on my own devices and isn’t shared.', 'st-tm-sum'),
+        row('Name, email, phone, address', 'Your own details'));
+      var steps = el('ol', 'st-ol');
+      [['Join TMDB', 'Go to <a href="https://www.themoviedb.org/signup" target="_blank" rel="noopener">themoviedb.org</a> and join (or sign in). Confirm your email address: TMDB won’t give a key until you have.'],
+        ['Ask for a key', 'Open <strong>Settings › API</strong>, choose <strong>Request an API Key</strong>, then <strong>Developer</strong> (free for personal use; not the commercial option). Accept TMDB’s terms.'],
+        ['Fill in the form', 'Use these answers:'],
+        ['Copy the API Key', 'TMDB shows two values. Use the <strong>API Key</strong>: 32 letters and numbers.'],
+        ['Paste it here', 'On the Discover page for a profile, under <strong>For the whole account: TMDB key</strong>. Every TV gets it within a minute, locked so the website can’t read it.']].forEach(function (s, i) {
+        var li = el('li'); var h = el('strong', null, s[0]); var p = el('p', 'soft'); p.innerHTML = s[1]; add(li, h, p); if (i === 2) li.appendChild(form); steps.appendChild(li);
+      });
+      add(d, steps, el('p', 'fineprint', 'Didn’t work? Check you copied the whole API Key with no spaces. No Request an API Key link? Confirm your email with TMDB, then sign in again.'));
+    });
+  }
+
+  // ---- signed out: step 1
+  function startSignedOut() {
+    var b = stPage(0, 'Let’s get your TV watching', 'About 4 minutes. You’ll need your TV service’s login (Xtream) or M3U link.');
+    if (ST.code) b.appendChild(note('A TV sent you here (code ' + prettyCode(ST.code) + '). It’s linked to your account as soon as you’ve signed in: nothing to type on the TV.', 'tv'));
+    var f = el('form', 'mg-card st-form'); f.noValidate = true;
+    var fn = field('Your first name', 'text', ST.fn, { maxlength: '40', autocomplete: 'given-name' });
+    add(fn, el('span', 'fineprint', 'It names your profile on the TV. You can add other people later.'));
+    var em = field('Email', 'email', '', { autocomplete: 'email', required: '' });
+    add(em, el('span', 'fineprint', 'We email you a sign-in link. No password to remember.'));
+    var trap = el('input'); trap.name = 'website'; trap.tabIndex = -1; trap.autocomplete = 'off'; trap.className = 'hp'; trap.setAttribute('aria-hidden', 'true');
+    var go = el('button', 'btn btn-primary', 'Email me a sign-in link'); go.type = 'submit';
+    var msg = el('p', 'form-msg'); msg.setAttribute('role', 'status');
+    var nextPath = function () { return '/start/?' + (ST.code ? 'c=' + ST.code + '&' : '') + 'fn=' + encodeURIComponent(fn.input.value.trim()); };
+    var signin = el('a', null, 'Sign in'); signin.href = '/signin/?next=' + encodeURIComponent('/start/' + (ST.code ? '?c=' + ST.code : ''));
+    add(f, fn, em, trap, add(el('div', 'row-btns'), go), msg, add(el('p', 'fineprint', 'Already have an account? '), signin));
+    f.addEventListener('submit', async function (e) {
+      e.preventDefault();
+      if (!fn.input.value.trim()) { msg.className = 'form-msg err'; msg.textContent = 'Enter your first name.'; return fn.input.focus(); }
+      go.disabled = true; msg.className = 'form-msg'; msg.textContent = 'Sending…';
+      var d = await post('/api/auth/email', { email: em.input.value, website: trap.value, next: nextPath() });
+      go.disabled = false;
+      if (!d._ok) { msg.className = 'form-msg err'; msg.textContent = d.error || 'Something went wrong.'; return; }
+      msg.textContent = d.message + ' Open it on this device; this setup carries on from there.';
+      if (d.devLink) { var a = el('a', null, ' Open it'); a.href = d.devLink; msg.appendChild(a); }
+    });
+    var side = el('aside', 'mg-card st-side');
+    add(side, el('h2', null, 'What happens next'), ol(['<strong>Your account</strong>: this page.', '<strong>Your TV</strong>: linked by itself if it sent you here.', '<strong>Your playlist</strong>: sent locked to the TV.', '<strong>A passkey</strong>: one Face ID, fingerprint or PIN, so your next TV gets the login by itself.']),
+      el('p', 'fineprint', 'Profiles, favorites, what kids can see and Discover come after, when you like.'), stLink('App not on your TV yet? How to install it', installHelp));
+    add(b, add(el('div', 'st-cols'), f, side));
+    fn.input.focus();
+  }
+
+  // ---- signed in
+  var stBusy = false;
+  async function startPage() {
+    if (stBusy) return; stBusy = true;
+    try {
+      if (!S.setup || !S.setup.started) { await post('/api/account/setup', { start: true }); if (S.setup) S.setup.started = true; }
+      if (!S.profiles.length) {
+        var name = ST.fn;
+        if (!name) { var me = await getJson('/api/me'); name = ((me && me.email) || '').split('@')[0].replace(/[._\d-]+/g, ' ').trim().split(' ')[0] || 'Me'; name = name.charAt(0).toUpperCase() + name.slice(1); }
+        var r = await post('/api/account/profiles/save', { name: name, parent: true, devices: S.devices.filter(function (d) { return d.managed; }).map(function (d) { return d.id; }), playlists: S.playlists.filter(function (p) { return !p.removing; }).map(function (p) { return p.id; }) });
+        if (r._ok) { stBusy = false; return load(); }
+      }
+      // A TV from setup goes to every profile (it can be narrowed on Devices later).
+      var bare = S.devices.filter(function (d) { return d.managed && !d.profiles.length; });
+      if (bare.length && S.profiles.length) {
+        for (var i = 0; i < bare.length; i++) await post('/api/account/devices/profiles', { deviceId: bare[i].id, profiles: S.profiles.map(function (q) { return q.id; }) });
+        stBusy = false; return load();
+      }
+    } finally { stBusy = false; }
+    var h = location.hash.replace(/^#/, '');
+    var hasTv = S.devices.length > 0, hasPl = S.playlists.some(function (p) { return !p.removing; });
+    var keyed = S.vault.length > 0;
+    if (h === 'yours') return startYours();
+    if (h === 'passkey' && !keyed) return startPasskey();
+    if (!hasTv && !ST.tvSkipped) return startTv();
+    var ready = S.devices.filter(function (d) { return d.managed && d.pubkey; });
+    if (hasTv && !ready.length && !hasPl && !ST.tvSkipped) return startTv(); // linked, still checking in
+    if (!hasPl) return startPlaylist();
+    if (!keyed && !(S.setup && S.setup.passkeySkipped)) return startPasskey();
+    return startYours();
+  }
+  function stPoll(ms) { clearTimeout(ST.timer); ST.timer = setTimeout(function () { if (PAGE === 'start') load(); }, ms || 3000); }
+  // Only the TV's progress is refreshed (the rest of the page keeps what's being typed, or a passkey prompt).
+  function stProgressPoll(ms) {
+    clearTimeout(ST.ptimer);
+    ST.ptimer = setTimeout(async function () {
+      var r = await fetch('/api/account/manage', { credentials: 'same-origin' }); if (!r.ok) return;
+      var fresh = await r.json(); S.playlists = fresh.playlists; S.loads = fresh.loads; S.devices = fresh.devices;
+      var old = $('st-progress'); var box = tvProgress(); if (old && box) old.replaceWith(box);
+    }, ms || 5000);
+  }
+
+  // ---- step 2: the TV
+  async function linkCode(code, msgEl) {
+    var look = await post('/api/link/lookup', { code: code });
+    if (!look._ok) { ST.linkErr = look.error || 'That code wasn’t found.'; return false; }
+    var ap = await post('/api/link/approve', { code: code, name: look.name || look.model || 'TV' });
+    if (ap.code === 'device_limit') { ST.linkErr = 'Your account already has ' + (ap.limit || 4) + ' devices, the most it can have. Remove one on the Devices page, then try again.'; return false; }
+    if (!ap._ok) { ST.linkErr = ap.error || 'That didn’t work.'; return false; }
+    ST.linking = { name: ap.name, at: Date.now() }; ST.linkErr = '';
+    history.replaceState(null, '', '/start/' + location.hash);
+    return true;
+  }
+  async function startTv() {
+    if (ST.code && !ST.tried) {
+      ST.tried = true;
+      stPage(1, 'Linking your TV…');
+      await linkCode(ST.code);
+    }
+    var linked = S.devices.length > 0;
+    if (ST.linking || linked) {
+      var d = S.devices[S.devices.length - 1];
+      var b = stPage(1, linked ? 'Your TV is linked' : 'Linking your TV…', linked ? 'It’s finishing on the TV: this takes a few seconds while Avid Viewer is open.' : 'Waiting for ' + ST.linking.name + ': keep Avid Viewer open on it.');
+      var c = el('section', 'mg-card');
+      add(c, el('h2', null, linked ? d.name : ST.linking.name), el('p', 'soft', linked ? [d.model, d.appVersion ? 'Avid Viewer ' + d.appVersion : ''].filter(Boolean).join(' · ') : 'Approved. The TV picks it up within a few seconds.'));
+      var waited = Date.now() - ((ST.linking && ST.linking.at) || Date.now());
+      if (waited > 90000 || (linked && d && !d.managed && Date.now() - (d.lastSeen || 0) > 90000)) {
+        c.appendChild(note(linked && d && !d.managed ? d.name + ' hasn\u2019t finished setting up. Open Avid Viewer on it (version 1.15.0 or later), or carry on: your passkey keeps the playlist until it\u2019s ready.'
+          : 'Still waiting. Make sure Avid Viewer is open on the TV (on its welcome screen) and connected to the internet.', 'warn'));
+        c.appendChild(add(el('div', 'row-btns'), btn('Carry on without it', 'btn btn-ghost btn-sm', function () { try { sessionStorage.setItem('avid-start-tv-skip', '1'); } catch (e) {} ST.tvSkipped = true; clearTimeout(ST.timer); startPlaylist(); })));
+      }
+      add(b, c);
+      stPoll(3000);
+      return;
+    }
+    var b2 = stPage(1, 'Link your TV', 'Install Avid Viewer on the TV and open it: it shows a code and a QR code. Scan the QR code with this phone, or type the code here.');
+    if (ST.linkErr) b2.appendChild(note(ST.linkErr + (ST.code ? ' The TV shows a new code when one runs out.' : ''), 'err'));
+    var f = el('form', 'mg-card'); f.noValidate = true;
+    var code = field('TV code', 'text', '', { maxlength: '9', autocomplete: 'off', autocapitalize: 'characters', spellcheck: 'false', placeholder: 'K7M2-QX9P' });
+    code.input.addEventListener('input', function () { var v = prettyCode(code.input.value); if (v !== code.input.value) code.input.value = v; });
+    var go = el('button', 'btn btn-primary', 'Link this TV'); go.type = 'submit';
+    add(f, code, add(el('div', 'row-btns'), go, btn('Skip: I’ll link a TV later', 'btn btn-ghost', function () { try { sessionStorage.setItem('avid-start-tv-skip', '1'); } catch (e) {} ST.tvSkipped = true; startPage(); })),
+      el('p', 'fineprint', 'Skipping is fine: your passkey keeps the playlist ready for any TV you link later.'), stLink('How to install Avid Viewer on a TV (Downloader code 2895338)', installHelp));
+    f.addEventListener('submit', async function (e) {
+      e.preventDefault(); go.disabled = true;
+      if (await linkCode(code.input.value)) return load();
+      go.disabled = false; startTv();
+    });
+    add(b2, f); code.input.focus();
+  }
+
+  // ---- step 3: the playlist
+  function tvsReady() { return S.devices.filter(function (d) { return d.managed && d.pubkey; }); }
+  function startPlaylist() {
+    var tvs = tvsReady();
+    var b = stPage(2, 'Add your playlist', 'From your TV service’s welcome email: a server, username and password, or an M3U link.');
+    var f = el('form', 'mg-card'); f.noValidate = true;
+    var type = 'xtream';
+    var seg = el('fieldset', 'seg small'); seg.setAttribute('aria-label', 'Type');
+    [['xtream', 'Login (Xtream)'], ['m3u', 'M3U link']].forEach(function (x) {
+      var l = el('label'); var r = el('input'); r.type = 'radio'; r.name = 'st-type'; r.value = x[0]; r.checked = x[0] === type;
+      r.addEventListener('change', function () { type = x[0]; show(); }); add(seg, add(l, r, document.createTextNode(' ' + x[1])));
+    });
+    var name = field('Name', 'text', '', { maxlength: '60', placeholder: 'My TV service' });
+    var server = field('Server address', 'url', '', { placeholder: 'http://server.example:8080', autocomplete: 'off', autocapitalize: 'off', spellcheck: 'false' });
+    var user = field('Username', 'text', '', { autocomplete: 'off', autocapitalize: 'off', spellcheck: 'false' });
+    var pass = field('Password', 'password', '', { autocomplete: 'off' });
+    var xt = add(el('div'), server, add(el('div', 'row2'), user, pass));
+    var m3u = field('M3U link', 'url', '', { placeholder: 'https://…/playlist.m3u', autocomplete: 'off', spellcheck: 'false' });
+    var epg = field('Guide (XMLTV) link, optional', 'url', '', { placeholder: 'https://…/guide.xml.gz', autocomplete: 'off', spellcheck: 'false' });
+    function show() { xt.hidden = type !== 'xtream'; m3u.hidden = type !== 'm3u'; }
+    var where = tvs.length ? 'Goes to every profile, and straight to ' + names(tvs.map(function (d) { return d.name; })) + ', locked so only that TV can read it.'
+      : 'No TV is ready yet, so your passkey keeps this login locked in your account until you link one.';
+    var go = el('button', 'btn btn-primary', tvs.length ? 'Send to my TV' : 'Save with my passkey'); go.type = 'submit';
+    var msg = el('p', 'form-msg'); msg.setAttribute('role', 'status');
+    add(f, seg, name, xt, m3u, epg, el('p', 'soft', where), add(el('div', 'row-btns'), go), msg);
+    show();
+    var side = el('aside', 'mg-card st-side');
+    add(side, el('h2', null, 'Where’s my login?'), el('p', 'soft', 'Search your email for “Xtream”, “M3U” or your service’s name. A link with get.php?username= in it works as an M3U link.'),
+      el('p', 'soft', 'The login is locked in this browser for your TV; avidviewer.app can never read it. The TV checks it with your provider and tells this page how it went.'));
+    add(b, add(el('div', 'st-cols'), f, side));
+    name.input.focus();
+    f.addEventListener('submit', async function (e) {
+      e.preventDefault();
+      var n = name.input.value.trim() || 'My TV service';
+      var login = type === 'xtream' ? { server: server.input.value.trim(), username: user.input.value.trim(), password: pass.input.value } : { m3uUrl: m3u.input.value.trim() };
+      if (type === 'xtream' && !(login.server && login.username && login.password)) { msg.className = 'form-msg err'; msg.textContent = 'Enter the server, username and password.'; return; }
+      if (type === 'm3u' && !/^https?:\/\//i.test(login.m3uUrl)) { msg.className = 'form-msg err'; msg.textContent = 'Enter the M3U link, starting with http:// or https://.'; return; }
+      if (type === 'xtream' && !/^https?:\/\//i.test(login.server)) login.server = 'http://' + login.server;
+      var full = Object.assign({ name: n, type: type, epgUrl: epg.input.value.trim() }, login);
+      go.disabled = true; msg.className = 'form-msg'; msg.textContent = 'Locking it for your TV…';
+      var data = { name: n, type: type, profiles: S.profiles.map(function (q) { return q.id; }), seals: [] };
+      try {
+        var now = tvsReady();
+        for (var i = 0; i < now.length; i++) data.seals.push({ deviceId: now[i].id, payload: await seal(now[i].pubkey, full) });
+        if (!now.length) { await passkeyOnce(); data.vault = await lockLogin(full); }
+        else if (V) data.vault = await lockLogin(full);
+      } catch (err) { go.disabled = false; msg.className = 'form-msg err'; msg.textContent = VAULT_TEXT[err.code] || err.message || 'That didn’t work.'; return; }
+      var res = await post('/api/account/playlists/save', data);
+      if (!res._ok) { go.disabled = false; msg.className = 'form-msg err'; msg.textContent = res.error || 'That didn’t work. Try again.'; return; }
+      pass.input.value = '';
+      ST.login = full; ST.playlistId = res.id; ST.sentAt = Date.now();
+      location.hash = S.vault.length ? '#yours' : '#passkey';
+      await load();
+    });
+  }
+
+  // How the TV is getting on with the playlist (it reports its channel load; it never sends what's in it).
+  function tvProgress() {
+    var p = S.playlists.find(function (x) { return x.id === ST.playlistId; }) || S.playlists.find(function (x) { return !x.removing; });
+    if (!p) return null;
+    var live = p.targets.filter(function (t) { return t.action !== 'remove'; });
+    if (!live.length) return null;
+    var box = el('section', 'st-progress'); box.id = 'st-progress';
+    var waiting = false;
+    live.forEach(function (t) {
+      var d = dev(t.deviceId); if (!d) return;
+      var ld = (S.loads || []).filter(function (x) { return x.deviceId === d.id; }).sort(function (a, b) { return b.at - a.at; })[0];
+      var fresh = ld && (!ST.sentAt || ld.at > ST.sentAt - 60000);
+      var text, kind = '';
+      if (t.status === 'failed') { text = d.name + ' couldn’t add ' + p.name + ': ' + friendly(t.error) + '.'; kind = 'err'; }
+      else if (t.status === 'needs_login') { text = d.name + ' is waiting for the login (the passkey step sends it).'; kind = 'warn'; }
+      else if (t.status !== 'done') { text = 'Sending ' + p.name + ' to ' + d.name + '… it picks it up within a minute while Avid Viewer is open.'; waiting = true; }
+      else if (fresh && ld.ok) { text = d.name + ' has your channels' + (ld.channels ? ': ' + ld.channels.toLocaleString() + ' of them' : '') + '. It’s ready to watch.'; kind = 'ok'; }
+      else if (fresh && !ld.ok) {
+        text = d.name + ' tried ' + p.name + ': ' + ({ login: 'your provider refused the username or password', expired: 'your provider says the subscription has ended', unreachable: 'the provider’s server didn’t answer', empty: 'no channels came back' }[ld.problem] || 'it didn’t load') + '. Check the login on the Playlists page (Edit).';
+        kind = 'err';
+      } else { text = d.name + ' has ' + p.name + ' and is loading the channels…'; waiting = true; }
+      box.appendChild(note(text, kind));
+    });
+    if (waiting && Date.now() - (ST.sentAt || Date.now()) < 5 * 60000) stProgressPoll(5000);
+    return box.childNodes.length ? box : null;
+  }
+
+  // ---- step 4: the passkey (one prompt where the browser can: the passkey is made with the lock in the same step)
+  var PRF_SALT = null;
+  async function prfSalt() { return PRF_SALT || (PRF_SALT = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode('avidviewer-vault-prf:v1')))); }
+  async function passkeyOnce() {
+    if (V) return V;
+    if (S.passkeys || S.vault.length) return unlock();
+    var WA = window.SimpleWebAuthnBrowser, P = window.AvidPasskey;
+    if (!WA || !WA.browserSupportsWebAuthn() || !window.PublicKeyCredential) throw VaultError('nopasskey');
+    var o = P ? await P.options('register') : await post('/api/passkeys/register/options', {});
+    if (!o._ok) throw new Error(o.error || 'The passkey couldn’t be started.');
+    var opts = Object.assign({}, o.options, { extensions: Object.assign({}, o.options.extensions || {}, { prf: { eval: { first: await prfSalt() } } }) });
+    var resp;
+    try {
+      var start = function () { return WA.startRegistration({ optionsJSON: opts }); };
+      resp = await (P ? P.fromTap('Create your passkey', 'Your browser asks you to save a passkey for avidviewer.app next (Face ID, fingerprint or your device PIN).', 'Create passkey', start) : start());
+    } catch (e) {
+      if (P) { P.report('setup', e); var x = VaultError('explained'); x.message = P.explain(e); throw x; }
+      throw VaultError(e && e.name === 'InvalidStateError' ? 'other' : 'cancelled');
+    }
+    var ext = resp.clientExtensionResults || {};
+    var out = ext.prf && ext.prf.results && ext.prf.results.first;
+    if (ext.prf) delete ext.prf; // what unlocks the logins never leaves this page
+    var v = await post('/api/passkeys/register/verify', { challengeId: o.challengeId, response: resp });
+    if (!v._ok) throw new Error(v.error || 'The passkey couldn’t be saved.');
+    S.passkeys = (S.passkeys || 0) + 1;
+    if (!out) return unlock(); // this browser locks only on a second use: one more prompt
+    var kek = await kekFrom(out);
+    var raw = crypto.getRandomValues(new Uint8Array(32));
+    var wrapped = await enc(kek, raw);
+    var r = await post('/api/account/vault/key', { credentialId: resp.id, wrapped: wrapped });
+    if (!r._ok) throw new Error(r.error || 'The key couldn’t be saved.');
+    S.vault.push({ credentialId: resp.id, wrapped: wrapped, name: '' });
+    V = await aesKey(raw, ['encrypt', 'decrypt']);
+    return V;
+  }
+  function startPasskey() {
+    var b = stPage(3, 'One last thing: a passkey', 'One passkey does all of this, with a single Face ID, fingerprint or PIN prompt.');
+    add(b, tvProgress());
+    var c = el('section', 'mg-card');
+    add(c, ol(['<strong>Your next TV gets the login by itself.</strong> No typing a server and password with a remote.', '<strong>Signing in takes a glance</strong> instead of an email link.', '<strong>Logins stay locked.</strong> Only your passkey and your TVs can open them; avidviewer.app can’t.']));
+    var msg = el('p', 'form-msg'); msg.setAttribute('role', 'status');
+    var go = btn(S.passkeys ? 'Use my passkey' : 'Create my passkey', 'btn btn-primary', async function () {
+      go.disabled = true; msg.className = 'form-msg'; msg.textContent = 'Follow your browser…';
+      try {
+        await passkeyOnce();
+        if (ST.login && ST.playlistId && !(pl(ST.playlistId) || {}).kept) await post('/api/account/playlists/import', { items: [{ id: ST.playlistId, vault: await lockLogin(ST.login) }] });
+        try { await syncLogins(); } catch (e2) { if (e2.code) throw e2; }
+        await post('/api/account/setup', { passkeySkipped: false });
+        location.hash = '#yours'; await load();
+      } catch (err) {
+        go.disabled = false; msg.className = 'form-msg err'; msg.textContent = VAULT_TEXT[err.code] || err.message || 'That didn’t work.';
+        try { msg.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (x) {}
+      }
+    });
+    var skip = btn('Not now', 'btn btn-ghost', async function () { await post('/api/account/setup', { passkeySkipped: true }); location.hash = '#yours'; await load(); });
+    add(c, add(el('div', 'row-btns'), go, skip), msg,
+      el('p', 'fineprint', 'Not now: your TV keeps working. A new TV asks for the login once, and Needs your attention reminds you. Saved in your phone’s or computer’s password manager (on an iPhone: Passwords).'));
+    add(b, c);
+  }
+
+  // ---- Make it yours
+  function startYours() {
+    var s = S.setup || { done: {} };
+    var first = S.profiles[0];
+    var b = stPage(4, 'Make it yours', 'All optional, in any order. Each reaches your TVs within a minute. Leave any time: what’s left waits under Needs your attention.');
+    add(b, tvProgress());
+    if (!S.devices.length) b.appendChild(note('No TV is linked yet. Install Avid Viewer on it and scan its QR code, or use Add a device on the Devices page.', 'warn'));
+    var grid = el('div', 'st-grid');
+    function card(k, title, text, actions) {
+      var c = el('section', 'mg-card st-card' + (s.done[k] ? ' done' : ''));
+      var h = el('div', 'st-card-head'); add(h, el('h2', null, title), s.done[k] ? el('span', 'st-done', '✓ Done') : null);
+      add(c, h, el('p', 'soft', text));
+      var row = el('div', 'row-btns'); actions.forEach(function (a) { if (a) row.appendChild(a); });
+      if (!s.done[k]) row.appendChild(btn('Skip', 'btn btn-ghost btn-sm', async function () { var o = {}; o[k] = true; await post('/api/account/setup', { done: o }); await load(); }));
+      c.appendChild(row); return c;
+    }
+    function link(text, href, primary) { var a = el('a', 'btn ' + (primary ? 'btn-primary' : 'btn-ghost') + ' btn-sm', text); a.href = href; return a; }
+    var postal = field('Postal code', 'text', s.postal || '', { maxlength: '10', autocomplete: 'postal-code', inputmode: 'text', placeholder: '58102' });
+    var pmsg = el('p', 'form-msg'); pmsg.setAttribute('role', 'status');
+    var saveP = btn('Save', 'btn btn-primary btn-sm', async function () {
+      saveP.disabled = true; var r = await post('/api/account/setup', { postal: postal.input.value });
+      saveP.disabled = false;
+      if (!r._ok) { pmsg.className = 'form-msg err'; pmsg.textContent = r.error || 'That didn’t work.'; return; }
+      S.setup = r.setup; pmsg.className = 'form-msg'; pmsg.textContent = 'Saved. Your TVs get it within a minute and suggest local channels at the top of ★ Favorites.';
+      var cardEl = saveP.closest('.st-card');
+      if (cardEl && !cardEl.classList.contains('done')) {
+        cardEl.classList.add('done'); var hd = cardEl.querySelector('.st-card-head'); if (hd) hd.appendChild(el('span', 'st-done', '✓ Done'));
+        var sk = Array.prototype.find.call(cardEl.querySelectorAll('button'), function (x) { return x.textContent === 'Skip'; }); if (sk) sk.remove();
+      }
+    });
+    add(grid,
+      card('profiles', 'Who’s watching', 'You’re the first profile' + (first ? ' (' + first.name + ')' : '') + '. Add the people in your home, and a Kids profile, each with their own favorites, My List and history.',
+        [link('Add a profile', '/profiles/#new', true), link('See profiles', '/profiles/')]),
+      card('sees', 'What each profile sees', 'Hide categories and channels a profile never watches. Hidden categories aren’t downloaded, so TVs load faster.',
+        [first ? link('Choose for ' + first.name, '/profiles/#manage=' + first.id + '/see', true) : null]),
+      (function () {
+        var c = card('area', 'Your area and favorites', 'Your postal code finds local stations (news, weather) in your playlist; TVs suggest them at the top of ★ Favorites. Then star the channels you watch most.',
+          [first ? link('Favorites & lists', '/profiles/#manage=' + first.id + '/lists') : null]);
+        c.insertBefore(add(el('div', 'st-inline'), postal, saveP), c.lastChild); c.insertBefore(pmsg, c.lastChild); return c;
+      })(),
+      card('discover', 'Discover', 'Trending and new movies and shows, and where to watch them. A free TMDB key turns it on; then pick the streaming services you pay for.',
+        [first ? link('Set up Discover', '/profiles/#manage=' + first.id + '/discover', true) : null, stLink('How to get a free TMDB key', tmdbHelp)]));
+    add(b, grid);
+    var done = el('a', 'btn btn-ghost', 'Done for now: go to my account'); done.href = '/playlists/';
+    add(b, add(el('div', 'row-btns'), done, stLink('How to install Avid Viewer on another TV', installHelp)));
+  }
+
   // ------------------------------------------------------------ loading
   async function load() {
     var r = await fetch('/api/account/manage', { credentials: 'same-origin' });
-    if (r.status === 401) { location.href = '/signin/?next=' + encodeURIComponent(location.pathname); return; }
+    if (r.status === 401) {
+      if (PAGE === 'start') return startSignedOut(); // first-time setup starts here, signed out
+      location.href = '/signin/?next=' + encodeURIComponent(location.pathname); return;
+    }
     S = await r.json();
     // Nov 22: no passkey yet: its options are fetched ahead, so creating one starts straight from the tap (Safari).
     if (!S.passkeys && window.AvidPasskey) window.AvidPasskey.keepReady('register');
@@ -387,6 +800,7 @@
       return profilesPage();
     }
     if (PAGE === 'devices') return devicesPage();
+    if (PAGE === 'start') return startPage();
   }
   // Unsaved choices (What X can see is the one editor with a Save button): ask before leaving them.
   var unsaved = null; // () => true while the open editor has changes not saved yet
@@ -1748,6 +2162,6 @@
   document.querySelectorAll('.mg-signout').forEach(function (b) {
     b.addEventListener('click', function () { post('/api/auth/signout', {}).then(function () { location.href = '/'; }); });
   });
-  load().catch(function () { say('Couldn\'t load your account. Reload the page.', true); });
+  load().catch(function (e) { console.error('load failed', e); say('Couldn\'t load your account. Reload the page.', true); });
   setInterval(function () { if (!editing && document.visibilityState === 'visible') load().catch(function () {}); }, 15000);
 })();

@@ -19,6 +19,7 @@
 //   POST /api/account/vault/key               {credentialId, wrapped}
 // What's being watched is never sent: Watching now has only the playlist, profile, device and start time.
 
+import { setupStatus } from './setup.js';
 import { json, body, randomToken, sha256hex } from './auth.js';
 import { deviceFor, MAX_DEVICES } from './devices.js';
 import { historySummary } from './history.js';
@@ -349,6 +350,10 @@ export async function manage(env, user) {
     pending: await pendingLogins(env, uid),
     history: await historySummary(env, uid),
     watchHistory: Boolean((await env.DB.prepare('SELECT watch_history FROM users WHERE id = ?1').bind(uid).first())?.watch_history),
+    // Nov 26, 2026: first-time setup (/start/), and each device's last channel load (to say when the TV has the channels).
+    setup: await setupStatus(env, uid),
+    loads: (await env.DB.prepare(`SELECT device_id, name, ok, channels, problem, at FROM device_load_status WHERE user_id = ?1`).bind(uid).all()).results
+      .map((x) => ({ deviceId: x.device_id, name: x.name || '', ok: Boolean(x.ok), channels: x.channels, problem: x.problem, at: x.at })),
   });
 }
 

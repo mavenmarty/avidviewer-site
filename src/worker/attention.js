@@ -9,6 +9,7 @@
 // level: "error" (something failed), "warn" (waiting on the owner or a device), "info" (worth knowing).
 
 import { json, body } from './auth.js';
+import { setupAttention } from './setup.js';
 
 const MIN = 60_000;
 const HOUR = 60 * MIN;
@@ -161,6 +162,8 @@ export async function attention(env, user) {
         'Devices back up once a day when something changed. Check Back up every day in Avid Viewer › Settings › Updates & about on that device, or press Back up now.');
     }
   }
+  // Nov 26, 2026: unfinished first-time setup (only for accounts that started it on /start/).
+  for (const it of await setupAttention(env, uid)) items.push(it);
   const order = { error: 0, warn: 1, info: 2 };
   items.sort((a, b) => order[a.level] - order[b.level]);
   const gone = new Set((await env.DB.prepare('SELECT key FROM attention_dismissed WHERE user_id = ?1').bind(uid).all()).results.map((r) => r.key));

@@ -49,7 +49,8 @@
       document.getElementById('link-state').hidden = false;
       form.hidden = true; document.querySelector('.or').hidden = true; document.getElementById('passkey-signin').hidden = true;
       post('/api/auth/verify', { token: t }).then(function (d) {
-        if (d._ok) { location.href = next || (d.newAccount ? '/account/?welcome=1' : '/playlists/'); return; }
+        // Nov 26, 2026: a new account goes through first-time setup.
+        if (d._ok) { location.href = next || (d.newAccount ? '/start/' : '/playlists/'); return; }
         say(document.getElementById('link-msg'), d.error || "That link didn't work.", true);
         form.hidden = false; document.querySelector('.or').hidden = false; document.getElementById('passkey-signin').hidden = false;
       });
@@ -141,6 +142,10 @@
         if (d.code === 'device_limit') { say(lmsg, ''); showFull(d.devices || [], d.limit || 4); return; }
         if (!d._ok) { say(lmsg, d.error || "That didn't work.", true); reset(); return; }
         document.getElementById('link-done-name').textContent = d.name;
+        // Nov 26, 2026: an account without a playlist carries on with first-time setup.
+        fetch('/api/account/manage', { credentials: 'same-origin' }).then(function (r) { return r.ok ? r.json() : null; }).then(function (m) {
+          if (m && !m.playlists.some(function (p) { return !p.removing; })) document.getElementById('link-setup').hidden = false;
+        }).catch(function () {});
         lf.hidden = true; document.getElementById('link-done').hidden = false;
       });
     });

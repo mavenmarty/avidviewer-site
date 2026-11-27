@@ -14,6 +14,7 @@
 // last seen and app version) and POST /api/tv/signout. Removing a TV on the Account page revokes its token.
 // TV routes take no cookies and no Origin header (they come from the app, not a browser).
 
+import { tvPostal } from './setup.js';
 import { handlePlaylistTvApi } from './playlists.js';
 import { handleProfileTvApi } from './profiles.js';
 import { handleListsTvApi } from './lists.js';
@@ -111,7 +112,8 @@ async function tvStart(request, env, url) {
   ).bind(randomToken(12), userCode, await sha256hex(deviceCode), info.name, info.model, info.appVersion, now, now + TV_CODE_TTL, ipHash).run();
   return json({
     userCode, deviceCode, interval: 5, expiresIn: TV_CODE_TTL / 1000,
-    verifyUrl: `${url.origin}/link/`, qrUrl: `${url.origin}/link/?c=${userCode}`,
+    // Nov 26, 2026: the QR code starts first-time setup, which links this TV as soon as you've signed in.
+    verifyUrl: `${url.origin}/link/`, qrUrl: `${url.origin}/start/?c=${userCode}`,
   });
 }
 
@@ -170,7 +172,9 @@ async function tvMe(request, env) {
   await Promise.race([syncBugs(env).catch(() => {}), new Promise((r) => setTimeout(r, 8000))]);
   // Nov 21: reseller addresses and renewals to carry out, and Reload channels / Check subscription from the website.
   const extras = await tvMeExtras(env, d).catch((e) => { console.error('tv me extras failed', e); return {}; });
-  return json({ email: d.email, name: d.name, deviceId: d.id, beta: await betaFor(env, d.id), sendLog: await wantsLog(env, d.id), ...extras });
+  // Nov 26, 2026: the postal code set on the website (the TV uses it when it's newer than its own).
+  const postal = await tvPostal(env, d.user_id).catch(() => null);
+  return json({ email: d.email, name: d.name, deviceId: d.id, beta: await betaFor(env, d.id), sendLog: await wantsLog(env, d.id), ...extras, ...(postal ? { postal } : {}) });
 }
 
 // ---------------------------------------------------------------- cloud backups (TV side)

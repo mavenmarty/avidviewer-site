@@ -175,7 +175,7 @@ async function main() {
     const name = basename(f, '.html');
     const path = name === 'index' ? '/' : `/${name}/`;
     // Launch news (the /#notify form and notify.js) is parked (owner, Nov 19); /api/notify still answers.
-    const scripts = name === 'playlists' || name === 'profiles' || name === 'devices' ? '<script src="/js/webauthn.js" defer></script><script src="/passkey.js" defer></script><script src="/playlists.js" defer></script><script src="/manage.js" defer></script><script src="/attention.js" defer></script><script src="/tmdb.js" defer></script>'
+    const scripts = name === 'playlists' || name === 'profiles' || name === 'devices' || name === 'start' ? '<script src="/js/webauthn.js" defer></script><script src="/passkey.js" defer></script><script src="/playlists.js" defer></script><script src="/manage.js" defer></script><script src="/attention.js" defer></script><script src="/tmdb.js" defer></script>'
       : name === 'report' ? '<script src="/report.js" defer></script>'
       : name === 'tmdb' ? '<script src="/tmdb.js" defer></script>'
       : name === 'reports' ? '<script src="/reports.js" defer></script><script src="/attention.js" defer></script>'
