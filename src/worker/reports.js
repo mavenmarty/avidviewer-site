@@ -338,7 +338,7 @@ export async function accountReport(env, user, url) {
   else if (st.key === 'not_app') steps.push({ key: 'not_app', label: 'Not an app problem', at: r.triaged_at });
   else steps.push({ key: 'filed', label: 'Filed as a bug', at: null });
   steps.push({ key: 'fixed', label: st.fixedIn ? 'Fixed in ' + st.fixedIn : 'Fixed', at: st.key === 'fixed' ? st.fixedAt : null });
-  steps.push({ key: 'confirmed', label: 'Confirmed fixed', at: named.length && named.every((x) => x.state === 'closed' && x.status === 'fixed') ? Math.max(...named.map((x) => x.fixed_at || 0)) : null });
+  steps.push({ key: 'confirmed', label: r.verified_at ? 'You confirmed it\u2019s fixed' : 'Confirmed fixed', at: r.verified_at || (named.length && named.every((x) => x.state === 'closed' && x.status === 'fixed') ? Math.max(...named.map((x) => x.fixed_at || 0)) : null) });
   return json({
     id: r.id, kind: r.kind, title: headline(r), status: st, steps,
     found: named.map((x) => ({ bug: x.number, title: x.title || '', note: x.public_note || '' })),
@@ -369,6 +369,59 @@ export async function accountReportNote(request, env, user, still) {
   return json({ ok: true });
 }
 
+/**
+ * Nov 28, 2026 (owner): for /api/tv/me: problems this device's person wrote (Report a problem) whose bugs are all
+ * fixed in a version this device now has, reported on an older one, not answered yet (90 days at most). The TV asks
+ * "Is it fixed?" on its 2nd or 3rd opening on that version.
+ */
+export async function tvVerifyList(env, d) {
+  const mine = d.app_version || '';
+  if (!mine) return [];
+  const rows = (await env.DB.prepare(`SELECT r.id, r.summary, r.app_version, r.created_at,
+      GROUP_CONCAT(rb.bug) AS bugs, SUM(CASE WHEN b.status = 'fixed' AND b.fixed_in IS NOT NULL THEN 0 ELSE 1 END) AS open, MAX(b.fixed_in) AS fixed_in
+    FROM reports r JOIN report_bugs rb ON rb.report_id = r.id LEFT JOIN bugs b ON b.number = rb.bug
+    WHERE r.device_id = ?1 AND r.kind = 'problem' AND r.verify_answer IS NULL AND r.created_at > ?2
+    GROUP BY r.id ORDER BY r.created_at DESC LIMIT 20`).bind(d.id, Date.now() - 90 * DAY).all()).results;
+  const out = [];
+  for (const r of rows) {
+    if (r.open > 0 || !r.fixed_in) continue;
+    // Every bug's fix version, the highest one counts.
+    const fixedIn = String(r.fixed_in);
+    const all = (await env.DB.prepare('SELECT b.fixed_in FROM report_bugs rb JOIN bugs b ON b.number = rb.bug WHERE rb.report_id = ?1').bind(r.id).all()).results.map((x) => x.fixed_in);
+    const need = all.reduce((m, v) => (vnum(v) > vnum(m) ? v : m), fixedIn);
+    if (vnum(mine) < vnum(need) || vnum(r.app_version) >= vnum(need)) continue;
+    out.push({ id: r.id, text: String(r.summary || 'A problem you reported').slice(0, 200), fixedIn: need, bugs: String(r.bugs || '').split(',').map(Number).filter(Boolean), sentAt: r.created_at });
+    if (out.length >= 3) break;
+  }
+  return out;
+}
+
+/** POST /api/tv/reports/verify {id, answer: fixed | still | later}: the TV's "Is it fixed?" answer for this device's report. */
+export async function tvVerify(request, env, d) {
+  if (!d) return json({ error: 'This device is not linked.' }, 401);
+  const b = await body(request);
+  const r = await env.DB.prepare('SELECT id, user_id, device_id FROM reports WHERE id = ?1 AND device_id = ?2').bind(String(b?.id || ''), d.id).first();
+  if (!r) return json({ error: 'That report was not found.' }, 404);
+  const answer = String(b?.answer || '');
+  const v = clip(b?.version || '', 30);
+  const now = Date.now();
+  const ops = [];
+  if (answer === 'fixed') {
+    ops.push(env.DB.prepare("UPDATE reports SET verify_answer = 'fixed', verified_at = ?2, updated_at = ?2 WHERE id = ?1").bind(r.id, now));
+    ops.push(env.DB.prepare('INSERT INTO report_notes (id, report_id, user_id, text, at) VALUES (?1, ?2, ?3, ?4, ?5)')
+      .bind(randomToken(12), r.id, r.user_id, 'Confirmed fixed on the TV' + (v ? ' (Avid Viewer ' + v + ')' : '') + '.', now));
+  } else if (answer === 'still') {
+    ops.push(env.DB.prepare("UPDATE reports SET verify_answer = 'still', state = 'new', reopened_at = ?2, updated_at = ?2 WHERE id = ?1").bind(r.id, now));
+    ops.push(env.DB.prepare('INSERT INTO report_notes (id, report_id, user_id, text, at) VALUES (?1, ?2, ?3, ?4, ?5)')
+      .bind(randomToken(12), r.id, r.user_id, "It's still happening (answered on the TV" + (v ? ' after updating to ' + v : '') + ').', now));
+    ops.push(env.DB.prepare('UPDATE devices SET want_log = 1 WHERE id = ?1').bind(d.id));
+  } else if (answer === 'later') {
+    ops.push(env.DB.prepare('UPDATE reports SET verify_asked_at = ?2 WHERE id = ?1').bind(r.id, now));
+  } else return json({ error: 'Answer fixed, still or later.' }, 400);
+  await env.DB.batch(ops);
+  return json({ ok: true });
+}
+
 /** For /api/tv/me: whether this device should send a new playback log ("It's still happening"). */
 export async function wantsLog(env, deviceId) {
   return Boolean((await env.DB.prepare('SELECT want_log FROM devices WHERE id = ?1').bind(deviceId).first())?.want_log);
@@ -379,7 +432,7 @@ export async function wantsLog(env, deviceId) {
 function adminRow(r, bugs, sugg) {
   return { id: r.id, kind: r.kind, summary: r.summary || '', title: headline(r), state: r.state, source: r.source, appVersion: r.app_version,
     deviceInfo: r.device_info || '', device: r.device_name || (r.device_id ? 'A removed device' : 'Not linked'), email: r.email || null,
-    sentAt: r.created_at, reopenedAt: r.reopened_at, signatures: parse(r.signatures, []),
+    sentAt: r.created_at, reopenedAt: r.reopened_at, verifiedAt: r.verified_at || null, verifyAnswer: r.verify_answer || null, signatures: parse(r.signatures, []),
     bugs: (bugs || []).map((b) => ({ number: b.number ?? b.bug, title: b.title || '', auto: Boolean(b.auto), addedAt: b.added_at })), suggestions: sugg || [] };
 }
 
@@ -403,6 +456,18 @@ export async function adminReports(env) {
       (SELECT COUNT(DISTINCT COALESCE(r.device_id, r.device_info)) FROM report_bugs rb JOIN reports r ON r.id = rb.report_id WHERE rb.bug = b.number) AS devices,
       (SELECT MAX(r.app_version) FROM report_bugs rb JOIN reports r ON r.id = rb.report_id WHERE rb.bug = b.number) AS latest
     FROM bugs b WHERE b.state = 'open' OR b.fixed_at > ?1 ORDER BY b.state = 'open' DESC, b.number DESC LIMIT 60`).bind(now - KEEP_FIXED).all()).results;
+  // Nov 28, 2026 (owner): who reported each bug (admin only; GitHub never names anyone): accounts with their reports and devices.
+  const byBug = new Map();
+  if (bugs.length) {
+    const who = (await env.DB.prepare(`SELECT rb.bug, r.user_id, u.email, COUNT(*) AS n, GROUP_CONCAT(DISTINCT d.name) AS devices, MIN(r.created_at) AS first, MAX(r.created_at) AS last
+        FROM report_bugs rb JOIN reports r ON r.id = rb.report_id LEFT JOIN users u ON u.id = r.user_id LEFT JOIN devices d ON d.id = r.device_id
+        WHERE rb.bug IN (${bugs.map(() => '?').join(',')}) GROUP BY rb.bug, r.user_id ORDER BY last DESC`).bind(...bugs.map((b) => b.number)).all()).results;
+    for (const w of who) {
+      if (!byBug.has(w.bug)) byBug.set(w.bug, []);
+      byBug.get(w.bug).push({ userId: w.user_id || null, email: w.email || null, reports: w.n, devices: w.devices ? String(w.devices).split(',') : [], first: w.first, last: w.last });
+    }
+  }
+  for (const b of bugs) b.reporters = byBug.get(b.number) || [];
   const counts = (await env.DB.prepare("SELECT state, COUNT(*) AS n FROM reports GROUP BY state").all()).results;
   return json({ queue, auto: autoRows.map((r) => adminRow(r, links.get(r.id), [])), bugs, counts,
     syncedAt: Number(await state(env, 'bugs_synced_at') || 0) || null, canFile: Boolean(env.GITHUB_TOKEN), webhook: Boolean(env.GITHUB_WEBHOOK_SECRET) });
@@ -414,7 +479,36 @@ export async function adminReport(env, url) {
   if (!r) return json({ error: 'Not found.' }, 404);
   const links = (await env.DB.prepare('SELECT rb.bug, rb.auto, rb.added_at, b.title FROM report_bugs rb LEFT JOIN bugs b ON b.number = rb.bug WHERE rb.report_id = ?1').bind(r.id).all()).results;
   const notes = (await env.DB.prepare('SELECT text, at FROM report_notes WHERE report_id = ?1 ORDER BY at').bind(r.id).all()).results;
-  return json({ ...adminRow(r, links, await suggestions(env, parse(r.signatures, []))), body: r.body, notes });
+  return json({ ...adminRow(r, links, await suggestions(env, parse(r.signatures, []))), userId: r.user_id || null, body: r.body, notes });
+}
+
+/**
+ * Nov 28, 2026 (owner): an account's reports and the bugs they're on, newest first, for Admin › People › the account.
+ * Reports stay in the account after a device is removed; hidden ones ('ignored') are listed too, marked.
+ */
+export async function adminUserReports(env, userId) {
+  const rows = (await env.DB.prepare(`SELECT r.id, r.kind, r.state, r.summary, r.source, r.app_version, r.device_info, r.created_at, r.reopened_at, r.verified_at, r.verify_answer, d.name AS device_name
+      FROM reports r LEFT JOIN devices d ON d.id = r.device_id WHERE r.user_id = ?1 ORDER BY r.created_at DESC LIMIT 200`).bind(userId).all()).results;
+  if (!rows.length) return { reports: [], bugs: [] };
+  const ids = rows.map((r) => r.id);
+  const links = (await env.DB.prepare(`SELECT rb.report_id, rb.bug, rb.added_at, b.title, b.state, b.status, b.fixed_in, b.fixed_at FROM report_bugs rb LEFT JOIN bugs b ON b.number = rb.bug
+      WHERE rb.report_id IN (${ids.map(() => '?').join(',')})`).bind(...ids).all()).results;
+  const per = new Map(); const bugs = new Map();
+  for (const l of links) {
+    if (!per.has(l.report_id)) per.set(l.report_id, []);
+    per.get(l.report_id).push(l.bug);
+    const r = rows.find((x) => x.id === l.report_id);
+    const b = bugs.get(l.bug) || { number: l.bug, title: l.title || '', state: l.state || 'open', status: l.status || 'open', fixedIn: l.fixed_in || null, fixedAt: l.fixed_at || null, reports: 0, first: r.created_at, last: r.created_at, devices: [] };
+    b.reports++; b.first = Math.min(b.first, r.created_at); b.last = Math.max(b.last, r.created_at);
+    const dn = r.device_name || r.device_info || ''; if (dn && !b.devices.includes(dn)) b.devices.push(dn);
+    bugs.set(l.bug, b);
+  }
+  return {
+    reports: rows.map((r) => ({ id: r.id, kind: r.kind, state: r.state, title: headline(r), source: r.source, appVersion: r.app_version,
+      device: r.device_name || (r.device_info ? r.device_info + ' (removed or not linked)' : 'Not linked'), sentAt: r.created_at, reopenedAt: r.reopened_at,
+      verifiedAt: r.verified_at || null, verifyAnswer: r.verify_answer || null, bugs: per.get(r.id) || [] })),
+    bugs: [...bugs.values()].sort((a, b) => b.last - a.last),
+  };
 }
 
 function issueBody(r) {

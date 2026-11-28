@@ -313,6 +313,38 @@
         box.appendChild(el('p', 'soft', 'Passkey set-up failed ' + new Date(f.at).toLocaleString() + ' · ' + (f.browser || 'a browser') + ' · ' + (f.step || '') + ': ' + (f.error || 'error') + (f.message ? ' (' + f.message + ')' : '')));
       });
 
+      // Nov 28, 2026 (owner): every report this account's devices sent, and the bugs they're on.
+      var rh = (d.reports && d.reports.reports) || [], rb = (d.reports && d.reports.bugs) || [];
+      box.appendChild(el('h3', null, 'Reports and bugs' + (rh.length ? ' · ' + plural(rh.length, 'report') : '')));
+      if (!rh.length) box.appendChild(el('p', 'soft', 'No reports from this account.'));
+      if (rb.length) {
+        var bl = el('ul', 'rows');
+        rb.forEach(function (b) {
+          var li = el('li');
+          var a = el('a', null, '#' + b.number + (b.title ? ' ' + b.title : '')); a.href = 'https://github.com/mavenmarty/avid-viewer/issues/' + b.number; a.target = '_blank'; a.rel = 'noopener';
+          li.appendChild(a);
+          li.appendChild(el('span', 'soft', (BUGST[b.status] || b.status) + (b.fixedIn ? ' in ' + b.fixedIn : '') + ' · ' + plural(b.reports, 'report') + ' from here, ' +
+            (b.first === b.last ? when(b.first) : when(b.first) + ' to ' + when(b.last)) + (b.devices.length ? ' · ' + b.devices.join(', ') : '')));
+          bl.appendChild(li);
+        });
+        box.appendChild(bl);
+      }
+      if (rh.length) {
+        var rl2 = el('ul', 'rows');
+        rh.slice(0, 50).forEach(function (r) {
+          var li = el('li');
+          li.appendChild(el('span', null, (KIND[r.kind] || r.kind) + ': ' + r.title));
+          li.appendChild(el('span', 'soft', [r.device, r.appVersion, when(r.sentAt), RPSTATE[r.state] || r.state,
+            r.bugs.length ? 'on #' + r.bugs.join(', #') : '', r.verifiedAt ? 'they confirmed it\u2019s fixed ' + when(r.verifiedAt) : '',
+            r.verifyAnswer === 'still' ? 'they said it\u2019s still happening after the fix' : '', r.reopenedAt ? 'still happening ' + when(r.reopenedAt) : ''].filter(Boolean).join(' · ')));
+          var o = el('button', 'linkish', 'Open ' + r.id); o.type = 'button';
+          o.addEventListener('click', function () { $('adm-user-dlg').close(); var t = document.querySelector('[data-tab=reports]'); if (t) t.click(); showReport(r.id); });
+          li.appendChild(o); rl2.appendChild(li);
+        });
+        if (rh.length > 50) rl2.appendChild(el('li', 'soft', (rh.length - 50) + ' older reports not shown.'));
+        box.appendChild(rl2);
+      }
+
       box.appendChild(el('h3', null, 'Notes'));
       var nf = el('form', 'adm-note');
       var ta = el('textarea'); ta.rows = 2; ta.maxLength = 2000; ta.placeholder = 'Add a private note (only admins see it)'; nf.appendChild(ta);
@@ -398,6 +430,8 @@
   // ---------------------------------------------------------------- reports (src/worker/reports.js)
   var KIND = { crash: 'Crash report', playback: 'Playback log', security: 'Security alert', problem: 'Report a problem (from the QR code)' };
   var BUGST = { open: 'Being fixed', need_info: 'Needs details', fixed: 'Fixed', closed: 'Closed' };
+  var RPSTATE = { new: 'waiting in the queue', triaged: 'filed', need_info: 'needs details', not_app: 'not an app problem', ignored: 'ignored (hidden from the account)' };
+  function openUser(id) { var t = document.querySelector('[data-tab=people]'); if (t) t.click(); loadUser(id); }
   function rpAct(id, action, extra) {
     var d = Object.assign({ id: id, action: action }, extra || {});
     return post('/api/admin/reports/triage', d).then(function (r) {
@@ -414,7 +448,7 @@
     head.appendChild(el('span', 'soft', r.device + (r.email ? ' (' + r.email + ')' : '') + ' · ' + (r.deviceInfo || 'device not given') + ' · ' + r.appVersion + ' · ' + when(r.sentAt) + (r.source === 'relay' ? ' · by email relay' : r.source === 'form' ? ' · written on avidviewer.app' : '')));
     box.appendChild(head);
     box.appendChild(el('div', null, r.summary || r.title));
-    if (r.reopenedAt) box.appendChild(el('div', 'adm-rp-flag', 'Back from the account: “It’s still happening” (' + when(r.reopenedAt) + ')'));
+    if (r.reopenedAt) box.appendChild(el('div', 'adm-rp-flag', (r.verifyAnswer === 'still' ? 'Asked on the TV after the fix: “It’s still happening”' : 'Back from the account: “It’s still happening”') + ' (' + when(r.reopenedAt) + ')'));
     if (r.bugs.length) box.appendChild(el('div', 'adm-rp-sugg', (auto ? 'Added by itself to ' : 'On ') + r.bugs.map(function (b) { return '#' + b.number + (b.title ? ' ' + b.title : ''); }).join(', ')));
     else if (r.suggestions.length) box.appendChild(el('div', 'adm-rp-sugg', 'Suggested: ' + r.suggestions.map(function (b) { return '#' + b.bug + (b.title ? ' ' + b.title : ''); }).join(', ')));
     else if (r.signatures.length && r.signatures.every(function (k) { return k.indexOf('provider|') === 0; })) box.appendChild(el('div', 'adm-rp-sugg', 'Suggested: not an app problem (only provider or network trouble)'));
@@ -447,6 +481,9 @@
       var c = $('adm-rp-item'); c.innerHTML = ''; c.hidden = false;
       c.appendChild(el('h2', null, r.id + ' · ' + (KIND[r.kind] || r.kind)));
       c.appendChild(el('p', 'soft', 'Keys: ' + (r.signatures.join(' · ') || 'none') + (r.bugs.length ? ' · on #' + r.bugs.map(function (b) { return b.number; }).join(', #') : '')));
+      var from = el('p', 'soft', 'From ' + r.device + (r.email ? ' · ' + r.email + ' ' : ''));
+      if (r.userId) { var ob = el('button', 'linkish', 'Open the account'); ob.type = 'button'; ob.addEventListener('click', function () { openUser(r.userId); }); from.appendChild(ob); }
+      c.appendChild(from);
       (r.notes || []).forEach(function (n) { c.appendChild(el('p', null, 'Note from the account (' + when(n.at) + '): ' + n.text)); });
       if (r.state !== 'new') c.appendChild(btn('Put back in the queue', 'btn-ghost', function () { rpAct(r.id, 'reopen'); }));
       var pre = el('pre', 'adm-rp-pre', r.body); c.appendChild(pre);
@@ -477,6 +514,17 @@
         top.appendChild(el('span', 'adm-rp-st', (BUGST[b.status] || b.status) + (b.fixed_in ? ' in ' + b.fixed_in : '')));
         row.appendChild(top);
         row.appendChild(el('div', 'soft', b.reports + (b.reports === 1 ? ' report' : ' reports') + ' · ' + b.devices + (b.devices === 1 ? ' device' : ' devices') + (b.latest ? ' · latest from ' + b.latest : '')));
+        // Nov 28, 2026 (owner): who reported it (here only; GitHub says "beta tester").
+        if ((b.reporters || []).length) {
+          var who = el('div', 'adm-rp-who'); who.appendChild(el('span', 'soft', 'Reported by: '));
+          b.reporters.forEach(function (w, i) {
+            if (i) who.appendChild(document.createTextNode(', '));
+            var label = (w.email || 'a device not linked') + ' (' + plural(w.reports, 'report') + (w.devices.length ? ', ' + w.devices.join(', ') : '') + ')';
+            if (w.userId) { var l = el('button', 'linkish', label); l.type = 'button'; l.addEventListener('click', function () { openUser(w.userId); }); who.appendChild(l); }
+            else who.appendChild(el('span', null, label));
+          });
+          row.appendChild(who);
+        }
         var note = el('textarea'); note.rows = 2; note.value = b.public_note || ''; note.placeholder = 'What the account\'s Reports page says (“What we found”). Empty: the bug\'s title.';
         note.setAttribute('aria-label', 'What people see about bug ' + b.number);
         var save = btn('Save', 'btn-ghost', function () { post('/api/admin/bugs/note', { number: b.number, note: note.value }).then(function (r) { save.textContent = r._ok ? 'Saved' : 'Failed'; }); });

@@ -12,7 +12,7 @@ import { backupsFor } from './devices.js';
 import { adminLicense, licenseFor, licensesByUser, endingSoon } from './licenses.js';
 import { adminReseller, adminLinesFor, handleResellerAdmin, adminPackages, hostsFor, configured as resellerOn } from './reseller.js';
 import { adminBeta, adminBetaChoose, adminBetaOffer } from './beta.js';
-import { adminReports, adminReport, adminTriage, adminBugNote, adminBugSync } from './reports.js';
+import { adminReports, adminReport, adminTriage, adminBugNote, adminBugSync, adminUserReports } from './reports.js';
 
 const DAY = 24 * 3600 * 1000;
 
@@ -109,6 +109,7 @@ async function userDetail(env, url) {
     backups: (await backupsFor(env, u.id)).map((x) => ({ name: x.name, createdAt: x.createdAt, size: x.size, removed: x.removed })),
     reseller: { ...(await adminLinesFor(env, u.id)), on: resellerOn(env), hosts: await hostsFor(env), accountKey: Boolean(await env.DB.prepare('SELECT 1 FROM account_keys WHERE user_id = ?1').bind(u.id).first()) },
     log: log.map((a) => ({ at: a.at, by: a.admin_email, action: a.action, detail: a.detail, reason: a.reason })),
+    reports: await adminUserReports(env, u.id).catch(() => ({ reports: [], bugs: [] })),
   });
 }
 

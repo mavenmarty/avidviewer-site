@@ -23,7 +23,7 @@ import { json, randomToken, sha256hex, ipOf, body } from './auth.js';
 import { betaFor } from './beta.js';
 import { checkEnding } from './licenses.js';
 import { tvMeExtras, handleResellerTvApi } from './reseller.js';
-import { tvReport, tvClaim as tvReportsClaim, wantsLog, tvReportForm, syncBugs } from './reports.js';
+import { tvReport, tvClaim as tvReportsClaim, wantsLog, tvReportForm, syncBugs, tvVerifyList, tvVerify } from './reports.js';
 
 const ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // same as setup codes: no 0/O, 1/I/L
 const TV_CODE_TTL = 10 * 60 * 1000;
@@ -174,7 +174,9 @@ async function tvMe(request, env) {
   const extras = await tvMeExtras(env, d).catch((e) => { console.error('tv me extras failed', e); return {}; });
   // Nov 26, 2026: the postal code set on the website (the TV uses it when it's newer than its own).
   const postal = await tvPostal(env, d.user_id).catch(() => null);
-  return json({ email: d.email, name: d.name, deviceId: d.id, beta: await betaFor(env, d.id), sendLog: await wantsLog(env, d.id), ...extras, ...(postal ? { postal } : {}) });
+  // Nov 28, 2026: problems reported from this device that are fixed in the version it has now ("Is it fixed?").
+  const verify = await tvVerifyList(env, { ...d, app_version: version || d.app_version }).catch(() => []);
+  return json({ email: d.email, name: d.name, deviceId: d.id, beta: await betaFor(env, d.id), sendLog: await wantsLog(env, d.id), ...extras, ...(postal ? { postal } : {}), verify });
 }
 
 // ---------------------------------------------------------------- cloud backups (TV side)
@@ -299,6 +301,7 @@ export async function handleTvApi(request, env, realUrl) {
     return tvReport(request, env, d && d.status === 'active' ? d : null);
   }
   if (p === '/api/tv/reports/claim') return tvReportsClaim(request, env, await deviceFor(request, env));
+  if (p === '/api/tv/reports/verify' && request.method === 'POST') return tvVerify(request, env, await deviceFor(request, env));
   if (p === '/api/tv/reports/form') {
     const d = await deviceFor(request, env);
     return tvReportForm(request, env, d && d.status === 'active' ? d : null);
