@@ -178,6 +178,7 @@ async function main() {
     const scripts = name === 'playlists' || name === 'profiles' || name === 'devices' || name === 'start' ? '<script src="/js/webauthn.js" defer></script><script src="/passkey.js" defer></script><script src="/playlists.js" defer></script><script src="/manage.js" defer></script><script src="/attention.js" defer></script><script src="/tmdb.js" defer></script>'
       : name === 'report' ? '<script src="/report.js" defer></script>'
       : name === 'tmdb' ? '<script src="/tmdb.js" defer></script>'
+      : name === 'passkey-check' ? '<script src="/passkey-check.js" defer></script>'
       : name === 'reports' ? '<script src="/reports.js" defer></script><script src="/attention.js" defer></script>'
       : name === 'signin' || name === 'account' || name === 'backups' || name === 'link' ? '<script src="/js/webauthn.js" defer></script><script src="/passkey.js" defer></script><script src="/account.js" defer></script>' + (name === 'account' || name === 'backups' ? '<script src="/attention.js" defer></script>' : '')
       : name === 'admin' ? '<script src="/js/webauthn.js" defer></script><script src="/passkey.js" defer></script><script src="/admin.js" defer></script>' : '';

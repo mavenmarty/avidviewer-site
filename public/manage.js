@@ -31,7 +31,8 @@
     Object.keys(attrs || {}).forEach(function (k) { i.setAttribute(k, attrs[k]); });
     l.appendChild(i); l.input = i; return l;
   }
-  function say(m, err) { var e = $('mg-msg'); e.textContent = m || ''; e.classList.toggle('err', !!err); }
+  // Nov 28, 2026: an error is scrolled into view (on Playlists it was at the top, off screen, so nothing seemed to happen).
+  function say(m, err) { var e = $('mg-msg'); e.textContent = m || ''; e.classList.toggle('err', !!err); if (err && m) try { e.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (x) {} }
   function post(path, data) {
     return fetch(path, { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify(data) })
       .then(function (r) { return r.json().then(function (j) { j._ok = r.ok; return j; }, function () { return { _ok: false, error: 'Something went wrong. Try again.' }; }); });

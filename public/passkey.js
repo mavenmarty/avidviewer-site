@@ -28,9 +28,11 @@
 
   /** Runs the passkey call [fn] and, if it fails, notes on the error how long the browser took to refuse (e.ms). */
   function timed(fn) {
-    var t = Date.now(), r;
-    try { r = fn(); } catch (e) { try { e.ms = 0; } catch (x) {} throw e; }
-    return Promise.resolve(r).catch(function (e) { try { e.ms = Date.now() - t; } catch (x) {} throw e; });
+    var t = Date.now(), r, u = navigator.userActivation;
+    // Nov 28: what the page had when it asked (the tap, focus, top frame), noted with a failure.
+    var had = 'tap ' + (u ? (u.isActive ? 'yes' : 'no') : '?') + ' · focus ' + (document.hasFocus() ? 'yes' : 'no') + ' · top ' + (window.top === window.self ? 'yes' : 'no');
+    try { r = fn(); } catch (e) { try { e.ms = 0; e.had = had; } catch (x) {} throw e; }
+    return Promise.resolve(r).catch(function (e) { try { e.ms = Date.now() - t; e.had = had; } catch (x) {} throw e; });
   }
 
   function post(path, data) {
@@ -130,7 +132,7 @@
   /** Notes a failed set-up for the admin view: the step, the error's name and message, nothing else. */
   function report(step, e) {
     if (e && e.byPage) return;
-    var how = '[' + (e && typeof e.ms === 'number' ? 'refused after ' + e.ms + ' ms' : 'time unknown') + ' · ' + capsText() + '] ';
+    var how = '[' + (e && typeof e.ms === 'number' ? 'refused after ' + e.ms + ' ms' : 'time unknown') + (e && e.had ? ' · ' + e.had : '') + ' · ' + capsText() + '] ';
     post('/api/passkeys/register/failed', { step: step, error: errName(e), message: (how + String((e && (e.cause && e.cause.message || e.message)) || '')).slice(0, 300) }).catch(function () {});
   }
 
