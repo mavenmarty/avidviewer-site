@@ -55,21 +55,42 @@ export async function deviceBeta(request, env, user) {
 
 // ---------------------------------------------------------------- admin
 
-/** Beta builds on GitHub (pre-releases with a beta tag), newest first. Cached for 5 minutes. */
-async function betaBuilds() {
+/**
+ * Beta builds on GitHub (pre-releases with a beta tag), newest first. Cached for 5 minutes.
+ *
+ * Nov 28, 2026: GitHub's API answered 403 to the website's requests without a key (60 an hour for each address, and
+ * Cloudflare's addresses are shared), so beta 3 couldn't be offered. The website's GitHub key is now sent with the
+ * request, and if the API still refuses, the public releases feed (releases.atom, not limited that way) is read.
+ */
+async function betaBuilds(env) {
   const api = `https://api.github.com/repos/${REPO}/releases?per_page=30`;
   const cache = typeof caches !== 'undefined' ? caches.default : null;
   const key = new Request(api);
   let r = cache ? await cache.match(key) : null;
   if (!r) {
-    const live = await fetch(api, { headers: { 'User-Agent': 'avidviewer.app', 'Accept': 'application/vnd.github+json' } });
-    if (!live.ok) throw new Error(`GitHub answered ${live.status}`);
-    r = new Response(await live.text(), { headers: { 'content-type': 'application/json', 'cache-control': 'max-age=300' } });
+    const headers = { 'User-Agent': 'avidviewer.app', 'Accept': 'application/vnd.github+json' };
+    if (env && env.GITHUB_TOKEN) headers.Authorization = 'Bearer ' + env.GITHUB_TOKEN;
+    const live = await fetch(api, { headers });
+    if (live.ok) {
+      const list = (await live.json()).filter((x) => x.prerelease).map((x) => ({ tag: x.tag_name, at: x.published_at }));
+      r = new Response(JSON.stringify(list), { headers: { 'content-type': 'application/json', 'cache-control': 'max-age=300' } });
+    } else {
+      const feed = await fetch(`https://github.com/${REPO}/releases.atom`, { headers: { 'User-Agent': 'avidviewer.app' } });
+      if (!feed.ok) throw new Error(`GitHub answered ${live.status} (and the releases feed ${feed.status})`);
+      const xml = await feed.text();
+      const list = [];
+      for (const m of xml.matchAll(/<entry>[\s\S]*?<\/entry>/g)) {
+        const tag = (m[0].match(/\/releases\/tag\/([^"<]+)"/) || [])[1];
+        const at = (m[0].match(/<updated>([^<]+)<\/updated>/) || [])[1];
+        if (tag) list.push({ tag: decodeURIComponent(tag), at });
+      }
+      r = new Response(JSON.stringify(list), { headers: { 'content-type': 'application/json', 'cache-control': 'max-age=300' } });
+    }
     if (cache) await cache.put(key, r.clone());
   }
   const list = await r.json();
-  return list.filter((x) => x.prerelease && BETA_TAG.test(x.tag_name))
-    .map((x) => ({ tag: x.tag_name, name: betaName(x.tag_name), publishedAt: x.published_at, build: Number(BETA_TAG.exec(x.tag_name)[3]) }))
+  return list.filter((x) => BETA_TAG.test(x.tag))
+    .map((x) => ({ tag: x.tag, name: betaName(x.tag), publishedAt: x.at, build: Number(BETA_TAG.exec(x.tag)[3]) }))
     .sort((a, b) => b.build - a.build);
 }
 
@@ -80,7 +101,7 @@ export async function adminBeta(env) {
     offered(env),
   ]);
   let builds = [], buildsError = null;
-  try { builds = await betaBuilds(); } catch (e) { buildsError = 'Couldn\'t read the beta builds from GitHub: ' + e.message; }
+  try { builds = await betaBuilds(env); } catch (e) { buildsError = 'Couldn\'t read the beta builds from GitHub: ' + e.message; }
   return json({
     offered: rel ? { tag: rel.tag, name: rel.name, at: rel.offered_at, by: rel.offered_by } : null,
     builds, buildsError, mail: mailConfigured(env),
@@ -122,7 +143,7 @@ export async function adminBetaOffer(request, env, admin, audit) {
   const b = await body(request);
   const tag = String(b?.tag || '');
   if (!BETA_TAG.test(tag)) return json({ error: 'Choose a beta build.' }, 400);
-  const builds = await betaBuilds().catch(() => null);
+  const builds = await betaBuilds(env).catch(() => null);
   if (builds && !builds.some((x) => x.tag === tag)) return json({ error: 'That build isn\'t a beta pre-release on GitHub.' }, 404);
   await env.DB.prepare(`INSERT INTO beta_release (id, tag, name, offered_at, offered_by) VALUES (1, ?1, ?2, ?3, ?4)
     ON CONFLICT(id) DO UPDATE SET tag = excluded.tag, name = excluded.name, offered_at = excluded.offered_at, offered_by = excluded.offered_by`)
