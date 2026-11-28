@@ -44,7 +44,20 @@
     if (!/^\/(?!\/)/.test(next)) next = '';
     // A link opened in a tab already on this page only changes the #fragment: start over so it's used.
     window.addEventListener('hashchange', function () { if (/[#&]t=/.test(location.hash)) location.reload(); });
-    if (t) {
+    if (t) (window.AvidPasskey ? window.AvidPasskey.builtInSoon() : Promise.resolve(false)).then(function (inside) {
+      // Nov 28, 2026: a link opened in Gmail's built-in browser was used up there, so Safari then said it had expired,
+      // and passkeys can't be made in there. Ask first; the link stays unused for Safari.
+      if (!inside) return useLink();
+      var box = document.getElementById('link-state'); box.hidden = false;
+      form.hidden = true; document.querySelector('.or').hidden = true; document.getElementById('passkey-signin').hidden = true;
+      var m = document.getElementById('link-msg');
+      m.textContent = 'You opened this link in an app\'s built-in browser (such as Gmail\'s). Passkeys only work in Safari: tap ⋯ or the share button and choose Open in Safari (or Open in browser). This link still works there.';
+      var here = document.createElement('button'); here.type = 'button'; here.className = 'btn btn-ghost'; here.textContent = 'Sign in here anyway';
+      here.style.marginTop = '12px';
+      here.addEventListener('click', function () { here.remove(); useLink(); });
+      m.parentNode.insertBefore(here, m.nextSibling);
+    });
+    function useLink() {
       history.replaceState(null, '', location.pathname); // don't leave the token in the address bar or history
       document.getElementById('link-state').hidden = false;
       form.hidden = true; document.querySelector('.or').hidden = true; document.getElementById('passkey-signin').hidden = true;
@@ -54,7 +67,8 @@
         say(document.getElementById('link-msg'), d.error || "That link didn't work.", true);
         form.hidden = false; document.querySelector('.or').hidden = false; document.getElementById('passkey-signin').hidden = false;
       });
-    } else {
+    }
+    if (!t) {
       fetch('/api/me', { credentials: 'same-origin' }).then(function (r) { if (r.ok) location.href = next || '/playlists/'; });
     }
     form.addEventListener('submit', function (e) {

@@ -9,7 +9,14 @@
   var ua = navigator.userAgent || '';
   var iOS = /iPhone|iPad|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
   // An app's own built-in browser (no "Safari/" in its name on iOS) usually can't make passkeys for other sites.
-  var inApp = iOS && !/Safari\//.test(ua);
+  var inApp = iOS && (!/Safari\//.test(ua) || /GSA\/|GoogleApp|Gmail|FBAN|FBAV|Instagram|Line\/|LinkedInApp|Twitter|MicroMessenger/.test(ua));
+  // Nov 28, 2026: Gmail's built-in browser on an iPhone calls itself Safari, but can't make passkeys for websites: it
+  // refuses at once and reports no Face ID or passcode. On an iPhone, Safari itself reports them (a passcode is needed
+  // to use passkeys at all), so "none" there means a built-in browser, or no passcode set.
+  function builtIn() { return inApp || (iOS && caps.uvpa === false); }
+  var IN_APP = 'This page is open in an app\'s built-in browser (such as Gmail\'s), and iPhones don\'t let those make passkeys. '
+    + 'Open avidviewer.app in Safari instead: in Gmail, go to Settings › Default apps and choose Safari for web links, then open the sign-in email again. '
+    + 'Or open Safari yourself, go to avidviewer.app and sign in there. (If this already is Safari: a passkey needs a passcode, set in Settings › Face ID & Passcode.)';
 
   // Nov 26, 2026: what this browser says it can do with passkeys, noted with a failure (and used to explain it).
   var caps = { uvpa: null, list: '' };
@@ -96,7 +103,7 @@
   function explain(e) {
     var n = errName(e);
     if (e && e.byPage) return 'No passkey was made. You can try again whenever you like.';
-    if (inApp) return 'This page is open inside another app (such as the Gmail app), which can\'t make passkeys. Open avidviewer.app in Safari, sign in there with a new email link, and try again.';
+    if (builtIn() && n === 'NotAllowedError') return IN_APP;
     if (n === 'InvalidStateError') return 'This device already has a passkey for your account.';
     if (n === 'SecurityError') return 'This browser refused passkeys for this page. Open avidviewer.app directly in Safari or Chrome and try again.';
     if (n === 'NotSupportedError') return 'This browser can\'t make passkeys. Update it, or use Safari or Chrome.';
@@ -148,7 +155,7 @@
     return fromTap(title, text, label, full).catch(function (e) {
       var quick = e && !e.byPage && errName(e) === 'NotAllowedError' && typeof e.ms === 'number' && e.ms < 1500;
       report(step + (quick ? ' full' : ''), e);
-      if (!quick) throw e;
+      if (!quick || builtIn()) throw e;
       var plainOpts = Object.assign({}, opts, {
         authenticatorSelection: { residentKey: 'preferred', userVerification: 'preferred' },
         extensions: {},
@@ -160,5 +167,13 @@
     }).catch(function (e) { try { e.reported = true; } catch (x) {} throw e; });
   }
 
-  window.AvidPasskey = { keepReady: keepReady, options: options, fromTap: fromTap, explain: explain, report: report, register: register, iOS: iOS, inApp: inApp };
+  /** Resolves to whether this is probably a built-in browser that can't make passkeys (iPhone, iPad). */
+  function builtInSoon() {
+    if (!iOS || inApp) return Promise.resolve(inApp);
+    if (caps.uvpa !== null) return Promise.resolve(builtIn());
+    try { return PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable().then(function (v) { caps.uvpa = v; return builtIn(); }).catch(function () { return false; }); }
+    catch (e) { return Promise.resolve(false); }
+  }
+
+  window.AvidPasskey = { keepReady: keepReady, options: options, fromTap: fromTap, explain: explain, report: report, register: register, iOS: iOS, inApp: inApp, builtInSoon: builtInSoon, IN_APP: IN_APP };
 })();
