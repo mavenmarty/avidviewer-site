@@ -15,7 +15,7 @@
 // TV routes take no cookies and no Origin header (they come from the app, not a browser).
 
 import { tvPostal } from './setup.js';
-import { handlePlaylistTvApi } from './playlists.js';
+import { handlePlaylistTvApi, liveOrderFor } from './playlists.js';
 import { handleProfileTvApi } from './profiles.js';
 import { handleListsTvApi } from './lists.js';
 import { handleHistoryTvApi } from './history.js';
@@ -176,7 +176,9 @@ async function tvMe(request, env) {
   const postal = await tvPostal(env, d.user_id).catch(() => null);
   // Nov 28, 2026: problems reported from this device that are fixed in the version it has now ("Is it fixed?").
   const verify = await tvVerifyList(env, { ...d, app_version: version || d.app_version }).catch(() => []);
-  return json({ email: d.email, name: d.name, deviceId: d.id, beta: await betaFor(env, d.id), sendLog: await wantsLog(env, d.id), ...extras, ...(postal ? { postal } : {}), verify });
+  // Nov 28, 2026: the account's playlist order for live channels (account playlist ids, primary first).
+  const liveOrder = await liveOrderFor(env, d.user_id).catch(() => []);
+  return json({ email: d.email, name: d.name, deviceId: d.id, beta: await betaFor(env, d.id), sendLog: await wantsLog(env, d.id), ...extras, ...(postal ? { postal } : {}), verify, liveOrder });
 }
 
 // ---------------------------------------------------------------- cloud backups (TV side)

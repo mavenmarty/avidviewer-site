@@ -18,7 +18,7 @@
 // send to the server and don't "click", so a scanner can't use up someone's link.
 
 import { setupSave } from './setup.js';
-import { playlistsSave, playlistsSeal, playlistsRemove, playlistVault } from './playlists.js';
+import { playlistsSave, playlistsSeal, playlistsRemove, playlistVault, playlistsOrder } from './playlists.js';
 import { attention, attentionDismiss, playlistsRetry } from './attention.js';
 import { listsGet, listsSave, orderGet, orderSave } from './lists.js';
 import { historyGet, historyPut, historyKeySave, historyDevices, historySeal, profileHistory, clearAllHistory, discoverSave, tmdbSave } from './history.js';
@@ -468,6 +468,7 @@ export async function handleAccountApi(request, env, realUrl) {
     case '/api/account/playlists/import': return playlistsImport(request, env, user);
     case '/api/account/playlists/adopt': return playlistsAdopt(request, env, user);
     case '/api/account/playlists/remove': return playlistsRemove(request, env, user);
+    case '/api/account/playlists/order': return playlistsOrder(request, env, user);
     case '/api/account/settings': return settings(request, env, user);
     case '/api/account/sessions/end': return endSessions(request, env, user);
     case '/api/account/delete': return deleteAccount(request, env, user);

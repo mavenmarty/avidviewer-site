@@ -859,6 +859,7 @@
     var b = body('Playlists', 'Every playlist in your account. Give each one to the profiles that should have it; profiles then go to your devices.');
     add(b, btn('＋ Add a playlist', 'btn btn-primary', function () { go('#new'); }));
     add(b, watchingNow());
+    add(b, liveOrderCard());
     var t = el('table', 'mg-table');
     t.innerHTML = '<thead><tr><th>Playlist</th><th>Type</th><th>Profiles</th><th>On devices</th><th>In use</th><th></th></tr></thead>';
     var tb = el('tbody');
@@ -884,6 +885,47 @@
     add(b, add(t, tb));
     add(b, tvPlaylists());
     add(b, el('p', 'fineprint', 'On devices counts the devices that have at least one profile with the playlist. Logins are never shown after they\'re saved: they\'re locked so only your passkey and your devices can open them. Avid Viewer is a media player and doesn\'t provide any content; add only playlists you have the rights to.'));
+  }
+
+  /**
+   * Nov 28, 2026 (owner, board 74): which playlist comes first for live channels. The first is the primary: its copy of
+   * a channel plays first, then the next playlist's if it won't start. Playlists with no live channels are listed apart.
+   */
+  var orderUndo = null;
+  function liveOrderCard() {
+    var all = S.playlists.filter(function (p) { return !p.removing; });
+    if (all.length < 2) return null;
+    var vodOnly = function (p) { return p.catalog && !p.catalog.none && !Number(p.catalog.channels); };
+    var live = all.filter(function (p) { return !vodOnly(p); });
+    var s = el('section', 'mg-card');
+    var msg = el('p', 'fineprint', 'The first is your primary: its copy of a channel plays first; if it won\u2019t start, the next playlist\u2019s plays, and so on. Every profile and TV follows this order.');
+    add(s, el('h2', null, 'Playlist order for live TV'), msg);
+    var ul = el('ol', 'mg-order');
+    async function save(ids, note) {
+      var before = live.map(function (p) { return p.id; });
+      var r = await post('/api/account/playlists/order', { ids: ids });
+      if (!r._ok) { say(r.error || 'Couldn\u2019t save the order.', true); return; }
+      orderUndo = before;
+      say((note || 'Saved') + ' · your TVs pick it up within a minute while Avid Viewer is open');
+      await load();
+    }
+    live.forEach(function (p, i) {
+      var li = el('li', 'mg-order-row');
+      var ids = live.map(function (x) { return x.id; });
+      function moved(to) { var a = ids.slice(); a.splice(i, 1); a.splice(Math.max(0, Math.min(a.length, to)), 0, p.id); return a; }
+      var acts = el('span', 'mg-acts');
+      add(acts,
+        btn('⤒', 'linkish', function () { save(moved(0)); }), btn('▲', 'linkish', function () { save(moved(i - 1)); }),
+        btn('▼', 'linkish', function () { save(moved(i + 1)); }), btn('⤓', 'linkish', function () { save(moved(live.length)); }));
+      acts.querySelectorAll('button').forEach(function (x, k) { x.setAttribute('aria-label', ['Move ' + p.name + ' to the top', 'Move ' + p.name + ' up', 'Move ' + p.name + ' down', 'Move ' + p.name + ' to the bottom'][k]); x.disabled = (k < 2 && i === 0) || (k >= 2 && i === live.length - 1); });
+      add(li, el('span', 'mg-order-n', String(i + 1)), el('strong', null, p.name), i === 0 ? el('span', 'mg-chip', 'Primary') : null,
+        el('span', 'soft', p.catalog && !p.catalog.none ? Number(p.catalog.channels).toLocaleString() + ' channels' : ''), acts);
+      ul.appendChild(li);
+    });
+    s.appendChild(ul);
+    all.filter(vodOnly).forEach(function (p) { s.appendChild(el('p', 'soft', p.name + ': movies and series only, not in the live order.')); });
+    if (orderUndo) s.appendChild(btn('Undo', 'btn btn-ghost btn-sm', function () { var u = orderUndo; orderUndo = null; save(u, 'Order put back'); }));
+    return s;
   }
 
   function catalogText(p) {

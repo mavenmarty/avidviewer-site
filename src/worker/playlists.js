@@ -186,6 +186,26 @@ export async function playlistsSeal(request, env, user) {
   return json({ ok: true, sent: stmts.length });
 }
 
+/**
+ * POST /api/account/playlists/order {ids: [...]} (Nov 28, 2026): the playlists in order for live channels, the first
+ * being the primary. Playlists left out keep no rank (after the others).
+ */
+export async function playlistsOrder(request, env, user) {
+  const b = await body(request);
+  const ids = Array.isArray(b?.ids) ? b.ids.map((x) => clip(x, 40)).filter(Boolean).slice(0, 100) : null;
+  if (!ids) return json({ error: 'Send the playlists in order.' }, 400);
+  const mine = new Set((await env.DB.prepare('SELECT id FROM account_playlists WHERE user_id = ?1').bind(user.id).all()).results.map((r) => r.id));
+  const ops = [env.DB.prepare('UPDATE account_playlists SET live_rank = NULL WHERE user_id = ?1').bind(user.id)];
+  ids.filter((id) => mine.has(id)).forEach((id, i) => ops.push(env.DB.prepare('UPDATE account_playlists SET live_rank = ?1 WHERE id = ?2 AND user_id = ?3').bind(i + 1, id, user.id)));
+  await env.DB.batch(ops);
+  return json({ ok: true });
+}
+
+/** For /api/tv/me: the account's ranked playlists in live order (ids, primary first). */
+export async function liveOrderFor(env, userId) {
+  return (await env.DB.prepare('SELECT id, live_rank FROM account_playlists WHERE user_id = ?1 AND removing = 0 AND live_rank IS NOT NULL ORDER BY live_rank').bind(userId).all()).results.map((r) => r.id);
+}
+
 export async function playlistsRemove(request, env, user) {
   const b = await body(request);
   const id = clip(b?.id, 40);

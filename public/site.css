@@ -700,3 +700,10 @@ button.btn-ghost { background: transparent; color: var(--text); }
 .st-ans { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: flex-start; padding: 8px 0; border-bottom: 1px solid var(--line); }
 .st-ans > .soft { flex: 0 0 170px; }
 .st-ans > span:nth-child(2) { flex: 1 1 240px; }
+
+/* Nov 28, 2026: Playlists › Playlist order for live TV */
+.mg-order{list-style:none;margin:8px 0 10px;padding:0;display:flex;flex-direction:column;gap:6px}
+.mg-order-row{display:flex;align-items:center;gap:12px;width:100%;box-sizing:border-box;padding:10px 14px;border:1px solid var(--line,#2E2721);border-radius:10px}
+.mg-order-row .soft{flex:1}
+.mg-order-n{display:inline-flex;width:24px;height:24px;border-radius:12px;align-items:center;justify-content:center;background:#3A322B;font-weight:700;font-size:13px}
+.mg-order-row:first-child .mg-order-n{background:#E9A23B;color:#1A1208}

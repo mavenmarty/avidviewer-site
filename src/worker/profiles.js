@@ -299,7 +299,7 @@ export async function manage(env, user) {
   const [devs, pls, ts, profs, pp, dp, vis, cats, keys] = await Promise.all([
     env.DB.prepare(`SELECT id, name, model, app_version, pubkey, profiles, managed_at, last_seen, playing, playing_at, stop_at, beta_offer, beta_at FROM devices
       WHERE user_id = ?1 AND revoked_at IS NULL ORDER BY created_at`).bind(uid).all(),
-    env.DB.prepare('SELECT id, name, type, updated_at, removing, (vault IS NOT NULL) AS kept, (sealed IS NOT NULL AND vault IS NULL) AS waiting FROM account_playlists WHERE user_id = ?1 ORDER BY name').bind(uid).all(),
+    env.DB.prepare('SELECT id, name, type, updated_at, removing, live_rank, (vault IS NOT NULL) AS kept, (sealed IS NOT NULL AND vault IS NULL) AS waiting FROM account_playlists WHERE user_id = ?1 ORDER BY live_rank IS NULL, live_rank, name').bind(uid).all(),
     env.DB.prepare('SELECT playlist_id, device_id, profiles, action, status, error, updated_at FROM playlist_targets WHERE user_id = ?1').bind(uid).all(),
     env.DB.prepare('SELECT id, name, kids, parent, color, (pin IS NOT NULL) AS has_pin, sort, history_off FROM profiles WHERE user_id = ?1 ORDER BY sort, created_at').bind(uid).all(),
     env.DB.prepare('SELECT profile_id, playlist_id FROM profile_playlists WHERE user_id = ?1').bind(uid).all(),
@@ -326,7 +326,7 @@ export async function manage(env, user) {
       betaOffer: Boolean(d.beta_offer), inBeta: Boolean(d.beta_at),
     })),
     playlists: pls.results.map((p) => ({
-      id: p.id, name: p.name, type: p.type, updatedAt: p.updated_at, removing: Boolean(p.removing), kept: Boolean(p.kept), accountSealed: Boolean(p.waiting),
+      id: p.id, name: p.name, type: p.type, updatedAt: p.updated_at, removing: Boolean(p.removing), kept: Boolean(p.kept), accountSealed: Boolean(p.waiting), liveRank: p.live_rank ?? null,
       profiles: pp.results.filter((x) => x.playlist_id === p.id).map((x) => x.profile_id),
       catalogAt: cats.results.find((c) => c.playlist_id === p.id)?.updated_at || null,
       catalog: (({ playlist_id, ...c }) => c)(csum.results.find((c) => c.playlist_id === p.id) || { playlist_id: 0, none: true }),
