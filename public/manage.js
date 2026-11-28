@@ -130,19 +130,22 @@
     if (!v._ok) throw new Error(v.error || 'The passkey couldn\'t be saved.');
     S.passkeys = (S.passkeys || 0) + 1;
     say('Passkey created. Now confirm it once more to lock your logins with it.');
+    return resp.plain ? resp.id : null;
   }
   /** Unlocks the vault with a passkey (made the first time). */
-  async function unlock() {
+  async function unlock(only) {
     if (V) return V;
     if (!window.PublicKeyCredential || !navigator.credentials) throw VaultError('nopasskey');
     var made = false;
-    if (!S.passkeys) { await createPasskey(); made = true; }
+    if (!S.passkeys) { only = await createPasskey(); made = true; }
     var salt = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode('avidviewer-vault-prf:v1')));
     var cred;
     var P = window.AvidPasskey;
     var ask = function () {
       return navigator.credentials.get({ publicKey: {
         challenge: crypto.getRandomValues(new Uint8Array(32)), rpId: location.hostname, userVerification: 'required', timeout: 120000,
+        // A passkey just made with the simpler request may not be one the browser offers by itself: name it.
+        allowCredentials: only ? [{ type: 'public-key', id: unb64url(only) }] : undefined,
         extensions: { prf: { eval: { first: salt } } },
       } });
     };
@@ -579,6 +582,7 @@
   // ---- step 3: the playlist
   function tvsReady() { return S.devices.filter(function (d) { return d.managed && d.pubkey; }); }
   function startPlaylist() {
+    editing = true; // Nov 28, 2026: the 15-second refresh mustn't redraw a form being filled in, or its message
     var tvs = tvsReady();
     var b = stPage(2, 'Add your playlist', 'From your TV service’s welcome email: a server, username and password, or an M3U link.');
     var f = el('form', 'mg-card'); f.noValidate = true;
@@ -628,7 +632,7 @@
       pass.input.value = '';
       ST.login = full; ST.playlistId = res.id; ST.sentAt = Date.now();
       location.hash = S.vault.length ? '#yours' : '#passkey';
-      await load();
+      editing = false; await load();
     });
   }
 
@@ -684,7 +688,7 @@
     var v = await post('/api/passkeys/register/verify', { challengeId: o.challengeId, response: resp });
     if (!v._ok) throw new Error(v.error || 'The passkey couldn’t be saved.');
     S.passkeys = (S.passkeys || 0) + 1;
-    if (!out) return unlock(); // this browser locks only on a second use: one more prompt
+    if (!out) return unlock(resp.plain ? resp.id : null); // this browser locks only on a second use: one more prompt
     var kek = await kekFrom(out);
     var raw = crypto.getRandomValues(new Uint8Array(32));
     var wrapped = await enc(kek, raw);
@@ -695,6 +699,7 @@
     return V;
   }
   function startPasskey() {
+    editing = true; // Nov 28, 2026: keeps the passkey step's message (it was cleared within 15 s)
     var b = stPage(3, 'One last thing: a passkey', 'One passkey does all of this, with a single Face ID, fingerprint or PIN prompt.');
     add(b, tvProgress());
     var c = el('section', 'mg-card');
@@ -707,13 +712,13 @@
         if (ST.login && ST.playlistId && !(pl(ST.playlistId) || {}).kept) await post('/api/account/playlists/import', { items: [{ id: ST.playlistId, vault: await lockLogin(ST.login) }] });
         try { await syncLogins(); } catch (e2) { if (e2.code) throw e2; }
         await post('/api/account/setup', { passkeySkipped: false });
-        location.hash = '#yours'; await load();
+        location.hash = '#yours'; editing = false; await load();
       } catch (err) {
         go.disabled = false; msg.className = 'form-msg err'; msg.textContent = VAULT_TEXT[err.code] || err.message || 'That didn’t work.';
         try { msg.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (x) {}
       }
     });
-    var skip = btn('Not now', 'btn btn-ghost', async function () { await post('/api/account/setup', { passkeySkipped: true }); location.hash = '#yours'; await load(); });
+    var skip = btn('Not now', 'btn btn-ghost', async function () { await post('/api/account/setup', { passkeySkipped: true }); location.hash = '#yours'; editing = false; await load(); });
     add(c, add(el('div', 'row-btns'), go, skip), msg,
       el('p', 'fineprint', 'Not now: your TV keeps working. A new TV asks for the login once, and Needs your attention reminds you. Saved in your phone’s or computer’s password manager (on an iPhone: Passwords).'));
     add(b, c);
