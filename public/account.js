@@ -349,9 +349,9 @@
     var resp;
     try {
       var start = function () { return WA.startRegistration({ optionsJSON: o.options }); };
-      resp = await (P ? P.fromTap('Create your passkey', 'Your browser asks you to save a passkey for avidviewer.app next (Face ID, fingerprint or your device code).', 'Create passkey', start) : start());
+      resp = await (P ? P.register(WA, o.options, 'account', 'Create your passkey', 'Your browser asks you to save a passkey for avidviewer.app next (Face ID, fingerprint or your device code).', 'Create passkey') : start());
     } catch (e) {
-      if (P) { P.report('account', e); say(m, P.explain(e), true); }
+      if (P) { if (!e.reported) P.report('account', e); say(m, P.explain(e), true); }
       else say(m, e && e.name === 'InvalidStateError' ? 'This device already has a passkey for your account.' : 'Adding the passkey was cancelled.', true);
       return;
     }

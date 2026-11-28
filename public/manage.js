@@ -120,10 +120,10 @@
     var resp;
     try {
       var start = function () { return WA.startRegistration({ optionsJSON: o.options }); };
-      resp = await (P ? P.fromTap('Create your passkey', 'Your logins are kept locked with a passkey. Your browser asks you to save one for avidviewer.app next (Face ID, fingerprint or your device code).', 'Create passkey', start) : start());
+      resp = await (P ? P.register(WA, o.options, 'playlists', 'Create your passkey', 'Your logins are kept locked with a passkey. Your browser asks you to save one for avidviewer.app next (Face ID, fingerprint or your device code).', 'Create passkey') : start());
     }
     catch (e) {
-      if (P) { P.report('playlists', e); var x = VaultError('explained'); x.message = P.explain(e); throw x; }
+      if (P) { if (!e.reported) P.report('playlists', e); var x = VaultError('explained'); x.message = P.explain(e); throw x; }
       throw VaultError(e && e.name === 'InvalidStateError' ? 'other' : 'cancelled');
     }
     var v = await post('/api/passkeys/register/verify', { challengeId: o.challengeId, response: resp });
@@ -673,9 +673,9 @@
     var resp;
     try {
       var start = function () { return WA.startRegistration({ optionsJSON: opts }); };
-      resp = await (P ? P.fromTap('Create your passkey', 'Your browser asks you to save a passkey for avidviewer.app next (Face ID, fingerprint or your device PIN).', 'Create passkey', start) : start());
+      resp = await (P ? P.register(WA, opts, 'setup', 'Create your passkey', 'Your browser asks you to save a passkey for avidviewer.app next (Face ID, fingerprint or your device PIN).', 'Create passkey') : start());
     } catch (e) {
-      if (P) { P.report('setup', e); var x = VaultError('explained'); x.message = P.explain(e); throw x; }
+      if (P) { if (!e.reported) P.report('setup', e); var x = VaultError('explained'); x.message = P.explain(e); throw x; }
       throw VaultError(e && e.name === 'InvalidStateError' ? 'other' : 'cancelled');
     }
     var ext = resp.clientExtensionResults || {};

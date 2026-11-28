@@ -134,5 +134,29 @@
     post('/api/passkeys/register/failed', { step: step, error: errName(e), message: (how + String((e && (e.cause && e.cause.message || e.message)) || '')).slice(0, 300) }).catch(function () {});
   }
 
-  window.AvidPasskey = { keepReady: keepReady, options: options, fromTap: fromTap, explain: explain, report: report, iOS: iOS, inApp: inApp };
+  /**
+   * Nov 28, 2026: a passkey set-up that also tries a plainer request. An iPhone refused ours straight away (no Face ID
+   * sheet) while making one on webauthn.io worked; theirs asks for less: no logins-lock extension (PRF) and a passkey
+   * the device may keep as it likes. So when ours is refused within a moment, a second button tries that plainer
+   * request. Each failure is noted with which try it was ("full" or "plain"); [opts] are the server's options.
+   * Resolves to the browser's answer, with .plain = true when the plain request made it.
+   */
+  function register(WA, opts, step, title, text, label) {
+    var full = function () { return WA.startRegistration({ optionsJSON: opts }); };
+    return fromTap(title, text, label, full).catch(function (e) {
+      var quick = e && !e.byPage && errName(e) === 'NotAllowedError' && typeof e.ms === 'number' && e.ms < 1500;
+      report(step + (quick ? ' full' : ''), e);
+      if (!quick) throw e;
+      var plainOpts = Object.assign({}, opts, {
+        authenticatorSelection: { residentKey: 'preferred', userVerification: 'preferred' },
+        extensions: {},
+      });
+      var plain = function () { return WA.startRegistration({ optionsJSON: plainOpts }); };
+      return fromTap('Try another way', 'Your device refused that passkey straight away. Tap to try a simpler one (some password managers need it).', 'Try again', plain, true)
+        .then(function (r) { try { r.plain = true; } catch (x) {} post('/api/passkeys/register/failed', { step: step + ' plain', error: 'OK', message: '[plain request worked · ' + capsText() + ']' }).catch(function () {}); return r; })
+        .catch(function (e2) { report(step + ' plain', e2); try { e2.reported = true; } catch (x) {} throw e2; });
+    }).catch(function (e) { try { e.reported = true; } catch (x) {} throw e; });
+  }
+
+  window.AvidPasskey = { keepReady: keepReady, options: options, fromTap: fromTap, explain: explain, report: report, register: register, iOS: iOS, inApp: inApp };
 })();
